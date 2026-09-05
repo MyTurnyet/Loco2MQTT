@@ -28,7 +28,10 @@ LocoNetMessageLogger logger(locoNetPort, messageLog);
 void setup()
 {
     Serial.begin(kSerialBaudRate);
-    locoNetPort.begin();
+    // locoNetPort's hardware is already initialized by LocoNetESPSerial's
+    // constructor (which self-calls begin() when both pins are
+    // non-negative); LocoNetEsp32Port::begin() is a documented no-op, so it
+    // is intentionally not called here to avoid a second hardware init.
 }
 
 void loop()

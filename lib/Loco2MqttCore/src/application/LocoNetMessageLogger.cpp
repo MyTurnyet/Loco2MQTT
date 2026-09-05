@@ -3,8 +3,9 @@
 void LocoNetMessageLogger::update()
 {
     std::optional<LocoNetMessage> message = port_.receive();
-    if (message.has_value())
+    while (message.has_value())
     {
         log_.record(*message);
+        message = port_.receive();
     }
 }

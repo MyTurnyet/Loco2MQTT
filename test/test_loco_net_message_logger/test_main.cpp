@@ -30,7 +30,7 @@ TEST_CASE("update() forwards a received message to the log")
     REQUIRE(log.recorded()[0] == message);
 }
 
-TEST_CASE("update() forwards exactly one message per call")
+TEST_CASE("update() drains all pending messages in a single call")
 {
     FakeLocoNetPort port;
     FakeMessageLog log;
@@ -38,7 +38,6 @@ TEST_CASE("update() forwards exactly one message per call")
     port.enqueue(LocoNetMessage({0x01}));
     port.enqueue(LocoNetMessage({0x02}));
 
-    logger.update();
     logger.update();
 
     REQUIRE(log.recorded().size() == 2);
