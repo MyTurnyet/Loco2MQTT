@@ -57,7 +57,7 @@ ports (interfaces) and only implemented in adapters.
   objects across calls.
 - **Actual boot sequence for `LocoNetEsp32Port`:** the vendor's
   `LocoNetESPSerial` constructor self-initializes hardware (UART begin,
-  timer setup) whenever both pins passed to it are non-negative — confirmed
+  timer setup) whenever either pin passed to it is non-negative — confirmed
   in `IoTT_LocoNetHBESP32.cpp`. Because of that, `LocoNetEsp32Port::begin()`
   is a documented no-op (calling `serial_.begin()` again would re-run
   hardware init a second time — duplicate timer setup, duplicate UART

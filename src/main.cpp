@@ -29,7 +29,7 @@ void setup()
 {
     Serial.begin(kSerialBaudRate);
     // locoNetPort's hardware is already initialized by LocoNetESPSerial's
-    // constructor (which self-calls begin() when both pins are
+    // constructor (which self-calls begin() when either pin is
     // non-negative); LocoNetEsp32Port::begin() is a documented no-op, so it
     // is intentionally not called here to avoid a second hardware init.
 }

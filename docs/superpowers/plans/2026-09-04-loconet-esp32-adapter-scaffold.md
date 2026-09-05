@@ -1034,7 +1034,7 @@ The local callback below is named `onLocoNetMessageReceived`, not the more obvio
 No native test: like `EspDigitalPin`/`ArduinoDigitalOutput`, this class only compiles under `ARDUINO`. Verified by a temporary build-check in `main.cpp`.
 
 **Post-hoc correction (2026-09-05 final-review fix, same precedent as `b69a11a`):** the code blocks below are updated from what actually shipped in commit `940e5e9` to reflect four fixes made in a follow-up whole-branch review, so a future brief regenerated from this plan matches reality rather than the original draft:
-1. `LocoNetESPSerial`'s constructor self-initializes hardware whenever both pins are non-negative (confirmed in `IoTT_LocoNetHBESP32.cpp`), so the original draft's `begin()` forwarding to `serial_.begin()` caused a second, redundant hardware init when `main.cpp` also called it. `begin()` is now a documented no-op.
+1. `LocoNetESPSerial`'s constructor self-initializes hardware whenever either pin is non-negative (confirmed in `IoTT_LocoNetHBESP32.cpp`), so the original draft's `begin()` forwarding to `serial_.begin()` caused a second, redundant hardware init when `main.cpp` also called it. `begin()` is now a documented no-op.
 2. `lnReceiveBuffer::lnData`/`lnTransmitMsg::lnData` are fixed 48-byte arrays (`lnMaxMsgSize`, `IoTTCommDef.h`), but the vendor library can itself report an `lnMsgSize` beyond that on a malformed long-form frame, and the original `send()` had no bound at all — both `receive()` and `send()` now clamp with `std::min<size_t>(..., lnMaxMsgSize)`.
 3. The receive queue was unbounded and `LocoNetMessageLogger::update()` only drained one message per call — a fast-enough incoming stream (or a future blocking call sharing `loop()`) could grow the queue without limit. `update()` now drains all pending messages per call, and the queue is capped at 32 entries with a drop-oldest policy.
 4. The callback logged every dispatched frame, including ones the vendor itself flags as incomplete, checksum-failed, or stray data (`lnReceiveBuffer::errorFlags`) — it now skips enqueueing any frame with an error/invalid-data bit set.
@@ -1151,7 +1151,7 @@ LocoNetEsp32Port::LocoNetEsp32Port(int rxPin, int txPin)
 void LocoNetEsp32Port::begin()
 {
     // No-op: LocoNetESPSerial's constructor already calls its own begin()
-    // internally whenever both pins are non-negative (confirmed in
+    // internally whenever either pin is non-negative (confirmed in
     // IoTT_LocoNetHBESP32.cpp), so calling serial_.begin() again here would
     // re-run hardware init a second time (duplicate timer setup, duplicate
     // UART begin, a leaked interrupt handle). Kept as a method — rather than
@@ -1200,7 +1200,6 @@ LocoNetEsp32Port locoNetPort(16, 17);
 
 void setup()
 {
-    locoNetPort.begin();
 }
 
 void loop()
@@ -1208,6 +1207,8 @@ void loop()
     locoNetPort.update();
 }
 ```
+
+(Post-hoc note, 2026-09-05: this snippet originally called `locoNetPort.begin()` in `setup()`; that call is dropped here per the same final-review correction as Task 9's — `LocoNetEsp32Port::begin()` is a documented no-op, since the vendor constructor already self-initializes hardware.)
 
 Run: `pio run -e esp32dev`
 Expected: `SUCCESS`.
@@ -1354,7 +1355,7 @@ void setup()
 {
     Serial.begin(kSerialBaudRate);
     // locoNetPort's hardware is already initialized by LocoNetESPSerial's
-    // constructor (which self-calls begin() when both pins are
+    // constructor (which self-calls begin() when either pin is
     // non-negative); LocoNetEsp32Port::begin() is a documented no-op, so it
     // is intentionally not called here to avoid a second hardware init.
 }
@@ -1525,17 +1526,45 @@ ports (interfaces) and only implemented in adapters.
   don't break the native build. Hand-written test doubles (`test/support/`)
   implement the same ports for native unit tests — no mocking framework.
 - **`src/main.cpp` is the composition root only** — it wires adapters and
-  application objects together, calls `begin()` once, and calls
-  non-blocking `update()` methods from `loop()`. No business logic lives
-  here. File-scope object construction in `main.cpp` is the one accepted
-  exception to "no globals" — Arduino's `setup()`/`loop()` model has no
-  other place to hold constructed objects across calls.
+  application objects together and calls non-blocking `update()` methods
+  from `loop()`. No business logic lives here. File-scope object
+  construction in `main.cpp` is the one accepted exception to "no globals" —
+  Arduino's `setup()`/`loop()` model has no other place to hold constructed
+  objects across calls.
+- **Actual boot sequence for `LocoNetEsp32Port`:** the vendor's
+  `LocoNetESPSerial` constructor self-initializes hardware (UART begin,
+  timer setup) whenever either pin passed to it is non-negative — confirmed
+  in `IoTT_LocoNetHBESP32.cpp`. Because of that, `LocoNetEsp32Port::begin()`
+  is a documented no-op (calling `serial_.begin()` again would re-run
+  hardware init a second time — duplicate timer setup, duplicate UART
+  begin, a leaked interrupt handle). `setup()` in `src/main.cpp` does not
+  call it. The method is kept on the class only so the adapter's
+  `begin()`/`update()` shape stays stable; it does nothing today.
 - `LocoNetEsp32Port` (`lib/Loco2MqttCore/src/adapters/LocoNetEsp32Port.cpp`)
   bridges the vendor library's plain-C-callback receive API into a
   translation-unit-local queue — a deliberate, narrowly-scoped exception to
   "no statics," matching the existing pattern in
   `MaltbeeController`'s `MrrwaLocoNetFeedbackSource.cpp`. Only one instance
-  may exist at a time.
+  may exist at a time. The queue is capped (32 entries, drop-oldest) since
+  it is heap-allocated and otherwise unbounded.
+  The vendor callback (`onLocoNetMessageReceived`, invoked via
+  `processLNMsg`/`handleLNIn`) runs synchronously inside
+  `LocoNetESPSerial::processLoop()`, which this adapter's `update()` calls
+  from `loop()` — **not from an ISR** — which is why it's safe for the
+  callback to push onto a heap-allocating `std::queue`.
+  The vendor's own max message size is `lnMaxMsgSize` (`IoTTCommDef.h`) =
+  48 bytes, the fixed size of both `lnReceiveBuffer::lnData` and
+  `lnTransmitMsg::lnData`. The vendor library can itself report an
+  `lnMsgSize` beyond that 48-byte buffer on a malformed long-form frame
+  (`handleLNIn`'s long-message branch trusts an attacker/noise-controlled
+  length byte, up to 127, without validating it against `lnMaxMsgSize`) —
+  this adapter clamps every copy into/out of those buffers with
+  `std::min<size_t>(..., lnMaxMsgSize)` to avoid reading or writing past
+  its own copy of them (the vendor's own buffer fill is not fixable here).
+  The callback also checks `lnReceiveBuffer::errorFlags` and discards
+  (does not enqueue) any frame with `errorCollision`, `errorFrame`,
+  `errorTimeout`, `errorCarrierLoss`, `msgIncomplete`, `msgXORCheck`, or
+  `msgStrayData` set, so malformed frames are never logged as if valid.
 - Classes are built needs-driven: value objects and pure domain logic first,
   then ports and fakes, then the one real application service, then
   adapters, then the composition root last.

@@ -57,7 +57,7 @@ LocoNetEsp32Port::LocoNetEsp32Port(int rxPin, int txPin)
 void LocoNetEsp32Port::begin()
 {
     // No-op: LocoNetESPSerial's constructor already calls its own begin()
-    // internally whenever both pins are non-negative (confirmed in
+    // internally whenever either pin is non-negative (confirmed in
     // IoTT_LocoNetHBESP32.cpp), so calling serial_.begin() again here would
     // re-run hardware init a second time (duplicate timer setup, duplicate
     // UART begin, a leaked interrupt handle). Kept as a method — rather than
