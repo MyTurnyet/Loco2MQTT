@@ -1029,6 +1029,8 @@ git commit -m "feat: add LocoNetMessageLogger application service"
 
 Wraps `LocoNetESP32HB`'s `LocoNetESPSerial` class (header `IoTT_LocoNetHBESP32.h`). That library receives messages via a plain C callback (`typedef void (*cbFct)(lnReceiveBuffer*)`, no user-data pointer), so — exactly like the existing `MrrwaLocoNetFeedbackSource.cpp` in `MaltbeeController` — the bridge from that callback into this adapter needs one translation-unit-local queue in an anonymous namespace inside the `.cpp`. This is vendor-library glue, confined entirely to this one `#ifdef ARDUINO` file; it is not a domain/application static and does not violate the no-statics rule above. It does mean only one `LocoNetEsp32Port` may exist at a time — true for this hardware (one LocoNet bus, one adapter) and worth calling out explicitly if that ever changes.
 
+The local callback below is named `onLocoNetMessageReceived`, not the more obvious `onLocoNetMessage` — `IoTT_LocoNetHBESP32.h` itself declares a global weak symbol `extern void onLocoNetMessage(lnReceiveBuffer*) __attribute__((weak))` (line 116), and since an anonymous namespace's members are implicitly visible in the enclosing (global) scope, naming the local callback identically makes `&onLocoNetMessage` ambiguous between the two identical-signature candidates. Confirmed by build failure during plan validation; the rename is the fix.
+
 No native test: like `EspDigitalPin`/`ArduinoDigitalOutput`, this class only compiles under `ARDUINO`. Verified by a temporary build-check in `main.cpp`.
 
 - [ ] **Step 1: Add the library dependency**
@@ -1041,12 +1043,14 @@ board = esp32dev
 framework = arduino
 monitor_speed = 115200
 lib_ldf_mode = deep+
-lib_deps = https://github.com/tanner87661/LocoNetESP32HB.git#959207d3f82c49356bcf370940d590cad47afb19
+lib_deps =
+    https://github.com/tanner87661/LocoNetESP32HB.git#959207d3f82c49356bcf370940d590cad47afb19
+    https://github.com/bblanchon/ArduinoJson.git#f9fe8557f13d8949eafd49ebd93a2929c4e5065f
 build_unflags = -std=gnu++11
 build_flags = -std=gnu++17
 ```
 
-(Pinned to that commit because the upstream repo has no tagged releases — `git ls-remote` confirms it is the current `master` HEAD as of this plan.)
+(`LocoNetESP32HB` pinned to that commit because the upstream repo has no tagged releases — `git ls-remote` confirms it is the current `master` HEAD as of this plan. `ArduinoJson` added as a direct dependency, pinned via git URL to the commit `v7.2.1` resolves to, because `LocoNetESP32HB`'s own header, `IoTT_LocoNetHBESP32.h`, `#include`s `<ArduinoJson.h>` without declaring it in its own `library.json`/`library.properties` — PlatformIO's LDF never pulls it in transitively, so the build fails on a missing header unless it's declared here explicitly. The PlatformIO Registry shorthand, e.g. `bblanchon/ArduinoJson@^7.0.0`, failed with an opaque `HTTPClientError` during plan validation; the git-URL form is confirmed to work.)
 
 - [ ] **Step 2: Write the header**
 
@@ -1098,7 +1102,7 @@ namespace
         return queue;
     }
 
-    void onLocoNetMessage(lnReceiveBuffer* buffer)
+    void onLocoNetMessageReceived(lnReceiveBuffer* buffer)
     {
         pendingMessages().emplace(buffer->lnData, buffer->lnData + buffer->lnMsgSize);
     }
@@ -1107,7 +1111,7 @@ namespace
 LocoNetEsp32Port::LocoNetEsp32Port(int rxPin, int txPin)
     : serial_(rxPin, txPin, /* inverse_logic = */ true)
 {
-    serial_.setLNCallback(&onLocoNetMessage);
+    serial_.setLNCallback(&onLocoNetMessageReceived);
 }
 
 void LocoNetEsp32Port::begin()
