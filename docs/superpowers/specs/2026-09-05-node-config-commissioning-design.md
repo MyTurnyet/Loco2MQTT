@@ -73,7 +73,11 @@ firmware's existing logging output.
   it, and calls `ConfigStore::save()` only on an explicit `Save` command —
   never automatically, so a typo doesn't silently persist. `Show` echoes
   the current in-progress SSID but never the password (see Section 5's
-  security rule — it applies here too).
+  security rule — it applies here too). For the same reason, an `Unknown`
+  command's response never echoes the raw input line back — a misspelled
+  verb (`set-passwrod hunter2`) or a rejected overlong line could contain
+  a password typed as an argument, so the reply is always a fixed generic
+  message.
 - `SerialCommissioningAdapter` drives the loop: reads a line via
   `UartPort`, parses it, hands the result to `CommissioningSession`,
   writes a response line. Lines longer than `kMaxLineLength = 128` bytes
@@ -89,13 +93,20 @@ firmware's existing logging output.
 - `Clock` (new port): `nowMilliseconds() const` returns elapsed
   milliseconds since boot. `ArduinoClock` wraps `millis()`;
   `FakeClock` is a settable fake.
-- `ButtonSetupModeTrigger` (application), ported and simplified from
-  MaltbeeController's equivalent: on each `update()` call, if
-  `DigitalInput::isActive()` has been continuously true for
-  `kHoldDurationMs = 3000`, it calls `SetupModeRequestStore::request()`
-  once (not repeatedly) and returns `true` so the composition root knows
-  to reboot. Releasing the button before 3 seconds resets the timer with
-  no side effect.
+- `ButtonSetupModeTrigger` (application), ported from MaltbeeController's
+  equivalent — including its release-based triggering, not simplified
+  away: on each `update()` call it tracks a hold starting when
+  `DigitalInput::isActive()` becomes true, then a release starting when it
+  goes false, and only fires once the release has held steady for
+  `kReleaseSettleMs = 50` (debouncing a bounced release) *and* the
+  preceding hold lasted at least `kHoldDurationMs = 3000`. On firing, it
+  calls `SetupModeRequestStore::request()` once and returns `true` so the
+  composition root knows to reboot. **Triggering on the hold itself (as
+  an earlier revision of this spec specified) is wrong on this hardware**:
+  GPIO0 is a strapping pin, and `ESP.restart()` while it reads low drops
+  the ROM bootloader into permanent UART download mode instead of
+  re-running application code. Triggering only after a confirmed release
+  guarantees the pin has already returned high before any reset happens.
 - `SetupModeRequestStore` (port): `request()` persists a one-shot flag,
   `consumeIfRequested()` reads and clears it in a single call (so a normal
   reboot afterward doesn't re-enter setup mode forever).
@@ -112,7 +123,12 @@ firmware's existing logging output.
   APs colliding on one workbench. Runs a `DNSServer` that answers every
   DNS query with the AP's own IP (the standard captive-portal trick so
   phones/laptops auto-open the setup page) and a `WebServer` serving one
-  page.
+  page. Registers an `onNotFound` handler (routed to the same page as
+  `GET /`) in addition to the explicit `/` route — OS captive-portal
+  detection probes arbitrary paths (`/generate_204`,
+  `/hotspot-detect.html`, ...) and a bare 404 on those is exactly the
+  signal that tells the OS there's no portal to show, so auto-open would
+  silently never fire without it.
 - `SetupFormRenderer` (domain, pure function): given the current
   `LocoNetAdapterConfig`, renders the HTML form. **Security rule: the
   stored WiFi password is never reflected back into the form** — the
@@ -124,7 +140,14 @@ firmware's existing logging output.
   `ConfigStore`, and triggers a reboot back into normal boot mode. It does
   not persist a new "please enter setup mode" request — the reboot should
   land in `Normal` or `NeedsCommissioning` per `BootModeSelector`, not
-  loop back into `WirelessSetup`.
+  loop back into `WirelessSetup`. A separate `wouldAccept()` query lets
+  the caller check completeness before committing to a response: since
+  `ESP.restart()` never returns, `CaptivePortalServer` must send the HTTP
+  response to the browser *before* calling the save-and-reboot path, not
+  after — sending it after a successful submission would be unreachable
+  dead code (the browser just sees a dropped connection), and sending a
+  generic "Saved" response unconditionally would falsely claim success
+  for a rejected submission.
 
 ## 6. Composition root wiring
 
