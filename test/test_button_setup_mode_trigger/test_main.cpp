@@ -19,7 +19,7 @@ TEST_CASE("never triggers while the button is inactive")
     REQUIRE(requestStore.consumeIfRequested() == false);
 }
 
-TEST_CASE("does not trigger before the hold reaches 3000ms")
+TEST_CASE("does not trigger merely by holding — release is required")
 {
     FakeDigitalInput button;
     FakeClock clock;
@@ -28,46 +28,33 @@ TEST_CASE("does not trigger before the hold reaches 3000ms")
     button.setActive(true);
 
     clock.setNowMilliseconds(0);
-    REQUIRE(trigger.update() == false);
-    clock.setNowMilliseconds(2999);
+    trigger.update();
+    clock.setNowMilliseconds(4000);
     REQUIRE(trigger.update() == false);
     REQUIRE(requestStore.consumeIfRequested() == false);
 }
 
-TEST_CASE("triggers once a continuous hold reaches exactly 3000ms and requests setup mode")
+TEST_CASE("releasing after a 3-second hold triggers once the 50ms settle window elapses")
 {
     FakeDigitalInput button;
     FakeClock clock;
     FakeSetupModeRequestStore requestStore;
     ButtonSetupModeTrigger trigger(button, clock, requestStore);
-    button.setActive(true);
 
     clock.setNowMilliseconds(0);
+    button.setActive(true);
     trigger.update();
     clock.setNowMilliseconds(3000);
-
+    button.setActive(false);
+    trigger.update();
+    clock.setNowMilliseconds(3049);
+    REQUIRE(trigger.update() == false);
+    clock.setNowMilliseconds(3050);
     REQUIRE(trigger.update() == true);
     REQUIRE(requestStore.consumeIfRequested() == true);
 }
 
-TEST_CASE("does not trigger again while still held past the threshold")
-{
-    FakeDigitalInput button;
-    FakeClock clock;
-    FakeSetupModeRequestStore requestStore;
-    ButtonSetupModeTrigger trigger(button, clock, requestStore);
-    button.setActive(true);
-    clock.setNowMilliseconds(0);
-    trigger.update();
-    clock.setNowMilliseconds(3000);
-    trigger.update();
-
-    clock.setNowMilliseconds(4000);
-
-    REQUIRE(trigger.update() == false);
-}
-
-TEST_CASE("releasing before the threshold resets the hold, requiring a fresh 3000ms hold")
+TEST_CASE("releasing before 3 seconds does not trigger even after the settle window")
 {
     FakeDigitalInput button;
     FakeClock clock;
@@ -80,12 +67,51 @@ TEST_CASE("releasing before the threshold resets the hold, requiring a fresh 300
     clock.setNowMilliseconds(1000);
     button.setActive(false);
     trigger.update();
+    clock.setNowMilliseconds(1050);
+    REQUIRE(trigger.update() == false);
+    REQUIRE(requestStore.consumeIfRequested() == false);
+}
 
-    clock.setNowMilliseconds(1000);
+TEST_CASE("a brief bounce back to active during the settle window does not reset the original hold start")
+{
+    FakeDigitalInput button;
+    FakeClock clock;
+    FakeSetupModeRequestStore requestStore;
+    ButtonSetupModeTrigger trigger(button, clock, requestStore);
+
+    clock.setNowMilliseconds(0);
     button.setActive(true);
     trigger.update();
-    clock.setNowMilliseconds(3999);
-    REQUIRE(trigger.update() == false);
-    clock.setNowMilliseconds(4000);
+    clock.setNowMilliseconds(3000);
+    button.setActive(false);
+    trigger.update();
+    clock.setNowMilliseconds(3020);
+    button.setActive(true);
+    trigger.update();
+    clock.setNowMilliseconds(3021);
+    button.setActive(false);
+    trigger.update();
+    clock.setNowMilliseconds(3071);
     REQUIRE(trigger.update() == true);
+    REQUIRE(requestStore.consumeIfRequested() == true);
+}
+
+TEST_CASE("triggering once requires a fresh full press-release cycle to trigger again")
+{
+    FakeDigitalInput button;
+    FakeClock clock;
+    FakeSetupModeRequestStore requestStore;
+    ButtonSetupModeTrigger trigger(button, clock, requestStore);
+    clock.setNowMilliseconds(0);
+    button.setActive(true);
+    trigger.update();
+    clock.setNowMilliseconds(3000);
+    button.setActive(false);
+    trigger.update();
+    clock.setNowMilliseconds(3050);
+    trigger.update();
+    requestStore.consumeIfRequested();
+
+    clock.setNowMilliseconds(3060);
+    REQUIRE(trigger.update() == false);
 }

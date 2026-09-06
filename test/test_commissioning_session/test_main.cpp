@@ -64,13 +64,23 @@ TEST_CASE("save persists the pending config and returns SAVED")
     REQUIRE(store.load() == LocoNetAdapterConfig("MyHomeWifi", "hunter2"));
 }
 
-TEST_CASE("an unknown command reports the raw line and does not save")
+TEST_CASE("an unknown command reports a generic error and does not save")
 {
     FakeConfigStore store;
     CommissioningSession session(store);
 
     std::string reply = session.apply(parseCommandLine("garbage"));
 
-    REQUIRE(reply == "ERR unknown command: garbage");
+    REQUIRE(reply == "ERR unknown command");
     REQUIRE(store.saveCount() == 0);
+}
+
+TEST_CASE("an unknown command never echoes its raw input, even if it contains a password-like argument")
+{
+    FakeConfigStore store;
+    CommissioningSession session(store);
+
+    std::string reply = session.apply(parseCommandLine("set-passwrod hunter2"));
+
+    REQUIRE(reply.find("hunter2") == std::string::npos);
 }

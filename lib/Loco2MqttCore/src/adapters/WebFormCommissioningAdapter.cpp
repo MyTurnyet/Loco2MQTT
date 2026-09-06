@@ -12,13 +12,17 @@ std::string WebFormCommissioningAdapter::renderPage() const
     return renderSetupForm(configStore_.load());
 }
 
+bool WebFormCommissioningAdapter::wouldAccept(const std::string& ssid, const std::string& password) const
+{
+    return LocoNetAdapterConfig(ssid, password).isComplete();
+}
+
 void WebFormCommissioningAdapter::handleSubmission(const std::string& ssid, const std::string& password)
 {
-    const LocoNetAdapterConfig config(ssid, password);
-    if (!config.isComplete())
+    if (!wouldAccept(ssid, password))
     {
         return;
     }
-    configStore_.save(config);
+    configStore_.save(LocoNetAdapterConfig(ssid, password));
     rebootTrigger_.reboot();
 }

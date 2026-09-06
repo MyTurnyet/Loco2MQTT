@@ -53,3 +53,14 @@ TEST_CASE("a submission with an empty password is rejected without saving or reb
     REQUIRE(store.saveCount() == 0);
     REQUIRE(reboot.rebootCount() == 0);
 }
+
+TEST_CASE("wouldAccept reports true only for a complete submission")
+{
+    FakeConfigStore store;
+    FakeRebootTrigger reboot;
+    WebFormCommissioningAdapter adapter(store, reboot);
+
+    REQUIRE(adapter.wouldAccept("MyHomeWifi", "hunter2") == true);
+    REQUIRE(adapter.wouldAccept("", "hunter2") == false);
+    REQUIRE(adapter.wouldAccept("MyHomeWifi", "") == false);
+}

@@ -4,24 +4,18 @@
 
 #include <Arduino.h>
 
+EspUartPort::EspUartPort() : assembler_(kMaxBufferedBytes)
+{
+}
+
 std::optional<std::string> EspUartPort::readLine()
 {
     while (Serial.available() > 0)
     {
-        const char c = static_cast<char>(Serial.read());
-        if (c == '\n')
+        auto line = assembler_.feed(static_cast<char>(Serial.read()));
+        if (line.has_value())
         {
-            std::string line = buffer_;
-            buffer_.clear();
-            if (!line.empty() && line.back() == '\r')
-            {
-                line.pop_back();
-            }
             return line;
-        }
-        if (buffer_.size() < kMaxBufferedBytes)
-        {
-            buffer_ += c;
         }
     }
     return std::nullopt;

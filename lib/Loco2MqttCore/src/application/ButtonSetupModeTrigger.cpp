@@ -7,42 +7,55 @@ ButtonSetupModeTrigger::ButtonSetupModeTrigger(DigitalInput& button, Clock& cloc
 
 bool ButtonSetupModeTrigger::update()
 {
-    if (!button_.isActive())
+    if (button_.isActive())
     {
-        resetHold();
-        return false;
+        return handleActive();
     }
-    beginHoldIfNeeded();
-    return triggerIfHeldLongEnough();
+    return handleInactive();
 }
 
-void ButtonSetupModeTrigger::resetHold()
+bool ButtonSetupModeTrigger::handleActive()
 {
-    isHolding_ = false;
-    alreadyTriggered_ = false;
-}
-
-void ButtonSetupModeTrigger::beginHoldIfNeeded()
-{
-    if (isHolding_)
+    if (!holding_)
     {
-        return;
+        holding_ = true;
+        holdStartMs_ = clock_.nowMilliseconds();
     }
-    isHolding_ = true;
-    holdStartMs_ = clock_.nowMilliseconds();
+    // Contact bounce: the button never actually left, so cancel any
+    // release-in-progress and let the original press time stand.
+    releasing_ = false;
+    return false;
 }
 
-bool ButtonSetupModeTrigger::triggerIfHeldLongEnough()
+bool ButtonSetupModeTrigger::handleInactive()
 {
-    if (alreadyTriggered_)
+    if (!holding_)
     {
         return false;
     }
-    if (clock_.nowMilliseconds() - holdStartMs_ < kHoldDurationMs)
+    if (!releasing_)
+    {
+        releasing_ = true;
+        releaseStartMs_ = clock_.nowMilliseconds();
+        return false;
+    }
+    return finishReleaseIfSettled();
+}
+
+bool ButtonSetupModeTrigger::finishReleaseIfSettled()
+{
+    if (clock_.nowMilliseconds() - releaseStartMs_ < kReleaseSettleMs)
     {
         return false;
     }
+    const unsigned long heldFor = releaseStartMs_ - holdStartMs_;
+    holding_ = false;
+    releasing_ = false;
+    return heldFor >= kHoldDurationMs && triggerRequest();
+}
+
+bool ButtonSetupModeTrigger::triggerRequest()
+{
     requestStore_.request();
-    alreadyTriggered_ = true;
     return true;
 }

@@ -52,7 +52,7 @@ TEST_CASE("update supports a full set-and-save round trip")
     REQUIRE(store.load() == LocoNetAdapterConfig("MyHomeWifi", "hunter2"));
 }
 
-TEST_CASE("update rejects a line longer than kMaxLineLength as unknown")
+TEST_CASE("update rejects a line longer than kMaxLineLength as unknown, without echoing it back")
 {
     FakeUartPort uart;
     FakeConfigStore store;
@@ -63,7 +63,7 @@ TEST_CASE("update rejects a line longer than kMaxLineLength as unknown")
 
     adapter.update();
 
-    REQUIRE(uart.writtenLines() == std::vector<std::string>{"ERR unknown command: " + overlong});
+    REQUIRE(uart.writtenLines() == std::vector<std::string>{"ERR unknown command"});
 }
 
 TEST_CASE("update reports an unrecognized command")
@@ -76,5 +76,5 @@ TEST_CASE("update reports an unrecognized command")
 
     adapter.update();
 
-    REQUIRE(uart.writtenLines() == std::vector<std::string>{"ERR unknown command: bogus"});
+    REQUIRE(uart.writtenLines() == std::vector<std::string>{"ERR unknown command"});
 }

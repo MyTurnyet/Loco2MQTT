@@ -18,7 +18,7 @@ std::string CommissioningSession::apply(const ParsedCommand& command)
         case CommandType::Save:
             return applySave();
         default:
-            return "ERR unknown command: " + command.value();
+            return "ERR unknown command";
     }
 }
 

@@ -5,11 +5,14 @@
 #include <optional>
 #include <string>
 
+#include "domain/LineAssembler.h"
 #include "ports/UartPort.h"
 
 class EspUartPort final : public UartPort
 {
 public:
+    EspUartPort();
+
     std::optional<std::string> readLine() override;
     void writeLine(const std::string& line) override;
 
@@ -19,7 +22,7 @@ private:
     // completed line over its own kMaxLineLength.
     static constexpr std::size_t kMaxBufferedBytes = 256;
 
-    std::string buffer_;
+    LineAssembler assembler_;
 };
 
 #endif
