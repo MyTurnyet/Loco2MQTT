@@ -97,20 +97,30 @@ ports (interfaces) and only implemented in adapters.
 - `lib/Loco2MqttCore/src/domain/` — `Level`, `LocoNetMessage`,
   `LocoNetAdapterConfig`, `ParsedCommand`, `CommandLineParser`, `BootMode`
   (`selectBootMode` is a free function, not a class), `SetupFormRenderer`,
-  `LineAssembler`
+  `LineAssembler`, `TurnoutAddress`, `TurnoutPosition`,
+  `TurnoutStateChanged`, `SetTurnoutPosition`, `DomainEvent`,
+  `DomainCommand`, `MqttMessage`, `IncomingMqttMessage`,
+  `PendingLocoNetSend`, `LocoNetChecksum`
 - `lib/Loco2MqttCore/src/ports/` — `DigitalPin`, `LocoNetPort`,
   `MessageLog`, `ConfigStore`, `UartPort`, `DigitalInput`, `Clock`,
-  `SetupModeRequestStore`, `RebootTrigger`
+  `SetupModeRequestStore`, `RebootTrigger`, `MqttPort`,
+  `LocoNetSendScheduler`, `LocoNetMessageDecoder`, `MqttEventEncoder`,
+  `MqttCommandDecoder`, `LocoNetEncoder`
 - `lib/Loco2MqttCore/src/application/` — `LocoNetMessageLogger`,
-  `CommissioningSession`, `ButtonSetupModeTrigger`
+  `CommissioningSession`, `ButtonSetupModeTrigger`,
+  `PendingLocoNetSendScheduler`, `LocoNetMessageRouter`, `MqttCommandRouter`
+- `lib/Loco2MqttCore/src/turnout/` — `TurnoutLocoNetDecoder`,
+  `TurnoutMqttEncoder`, `TurnoutMqttCommandDecoder`, `TurnoutLocoNetEncoder`
 - `lib/Loco2MqttCore/src/adapters/` — `EspDigitalPin`, `LocoNetEsp32Port`,
   `SerialMessageLog`, `NvsConfigStore`, `EspUartPort`,
   `SerialCommissioningAdapter`, `EspDigitalInput`, `ArduinoClock`,
   `NvsSetupModeRequestStore`, `EspRebootTrigger`,
-  `WebFormCommissioningAdapter`, `CaptivePortalServer`
+  `WebFormCommissioningAdapter`, `CaptivePortalServer`, `EspWifiPort`,
+  `PicoMqttPort`
 - `test/support/` — `FakeDigitalPin`, `FakeLocoNetPort`, `FakeMessageLog`,
   `FakeConfigStore`, `FakeUartPort`, `FakeDigitalInput`, `FakeClock`,
-  `FakeSetupModeRequestStore`, `FakeRebootTrigger`
+  `FakeSetupModeRequestStore`, `FakeRebootTrigger`, `FakeMqttPort`,
+  `FakeLocoNetSendScheduler`
 - `test/test_<name>/test_main.cpp` — Catch2 test binaries
 
 **Why `native`'s `build_flags` includes `-Ilib/Loco2MqttCore/src`:**

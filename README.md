@@ -2,15 +2,14 @@
 
 Firmware for an ESP32-based LocoNet adapter.
 
-**Current status: Phase 1.** This firmware proves a working RX/TX interface
-to a LocoNet bus, built on a breadboard opto/transistor interface (see
-[`docs/breadboard-build-guide.md`](docs/breadboard-build-guide.md)), and logs
-every received LocoNet message to the serial console. **MQTT bridging — the
-project's eventual purpose — has not been started yet.** There is no network
-stack, no broker connection, and no MQTT topic scheme in this firmware today.
-If you're looking for a drop-in LocoNet-to-MQTT gateway, this isn't one yet;
-if you want to watch this project's LocoNet plumbing work and grow toward
-that, read on.
+**Current status: Phase 1 with MQTT bridge.** This firmware proves a working
+RX/TX interface to a LocoNet bus, built on a breadboard opto/transistor
+interface (see [`docs/breadboard-build-guide.md`](docs/breadboard-build-guide.md)),
+connects to WiFi using stored commissioning credentials, runs an on-device
+MQTT broker (PicoMQTT), and bridges turnout state bidirectionally — sending
+LocoNet turnout changes to MQTT and accepting MQTT commands to drive LocoNet
+turnout operations. MQTT bridging for sensor, transponder, and other device
+types remains future work.
 
 Built with Test-Driven Development and Hexagonal Architecture — domain and
 application logic is tested natively on a desktop, independent of the ESP32
@@ -18,25 +17,26 @@ hardware and independent of any physical LocoNet bus.
 
 ## What it does today
 
-- Receives LocoNet messages over a breadboard-built RX interface and prints
-  each one to the serial console as space-separated uppercase hex
-  (`B2 00 00 50`).
-- Validates every received frame against the vendor library's own
-  collision/checksum/incomplete-frame flags before logging it, so bus noise
-  or wiring mistakes don't show up disguised as real traffic.
+- Receives LocoNet messages over a breadboard-built RX interface and validates
+  every frame against the vendor library's own collision/checksum/incomplete-frame
+  flags before processing it, so bus noise or wiring mistakes don't masquerade
+  as real traffic.
+- Connects to WiFi using stored commissioning credentials (see "WiFi
+  commissioning" below).
+- Runs PicoMQTT as an on-device broker and publishes/subscribes to turnout
+  bridge topics.
+- Bridges turnout state bidirectionally: LocoNet turnout change commands are
+  published to MQTT topics, and MQTT messages are translated back into LocoNet
+  commands sent to the bus.
 - Can transmit a `LocoNetMessage` onto the bus (`LocoNetPort::send()` is
-  implemented and hardware-build-checked), but nothing in the firmware calls
-  it yet — there's no outbound message source until MQTT (or something else)
-  is wired up to drive it.
+  implemented and hardware-build-checked), driven by the MQTT bridge component.
 
 ## What it doesn't do yet
 
-- No MQTT client, no broker connection, no topic scheme. WiFi credentials
-  *are* now configurable — see "WiFi commissioning" below — but the
-  firmware doesn't join WiFi with them yet in normal operation; today
-  they're only captured and persisted for the future MQTT bridge to use.
-- No JMRI integration beyond what a raw LocoNet tap gives you for free.
-- No use of `LocoNetPort::send()` from any application logic.
+- No MQTT bridging for sensors, transponders, or other device types beyond
+  turnout — see "Known limitations" below.
+- No JMRI integration beyond what a raw LocoNet tap gives you for free
+  (direct LocoNet message observation).
 - No PCB — this runs on a breadboard interface only (a PCB phase is noted
   as future work in the build guide).
 
@@ -84,7 +84,7 @@ pio test -e native
 
 This compiles and runs every domain/application/port test against
 hand-written fakes — no ESP32, no LocoNet bus, no serial port required. All
-20 suites should pass. This is the fast feedback loop for any code change;
+32 suites should pass. This is the fast feedback loop for any code change;
 run it before touching real hardware.
 
 ### 2. Build the firmware
@@ -181,6 +181,27 @@ visiting any URL should open a setup page automatically (a captive
 portal). Submitting the form saves the config and reboots back to normal
 operation.
 
+## MQTT turnout bridge
+
+In normal boot mode, the firmware connects to the WiFi network using the
+stored commissioning credentials and runs an on-device MQTT broker (PicoMQTT).
+Turnout state is bridged bidirectionally:
+
+- **State publication** (`loconet/turnout/<address>/state`): every time a
+  turnout command is received from the LocoNet bus, the firmware publishes
+  the resulting state (`"CLOSED"` or `"THROWN"`) to the corresponding MQTT
+  topic. State is also re-published every 30 seconds for all known turnouts,
+  ensuring late subscribers receive the current state even if they missed the
+  original command (PicoMQTT's broker mode does not honor the MQTT retained
+  flag, so periodic re-publication is the reliability mechanism).
+- **Command subscription** (`loconet/turnout/<address>/set`): the firmware
+  listens to these topics and translates MQTT messages containing `"CLOSED"`
+  or `"THROWN"` into LocoNet SL2 turnout commands sent to the bus.
+
+Turnout addresses are passed through unchanged — a command to address 123
+on LocoNet maps to `loconet/turnout/123/state` and
+`loconet/turnout/123/set` on MQTT.
+
 ## Architecture overview
 
 Hexagonal (ports & adapters) architecture. Domain and application code has
@@ -194,20 +215,35 @@ adapters, each guarded with `#ifdef ARDUINO`.
 lib/Loco2MqttCore/src/
 ├── domain/         Level, LocoNetMessage, LocoNetAdapterConfig, ParsedCommand,
 │                   CommandLineParser, BootMode, SetupFormRenderer,
-│                   LineAssembler — pure value objects and logic, no I/O
+│                   LineAssembler, TurnoutAddress, TurnoutPosition,
+│                   TurnoutStateChanged, SetTurnoutPosition, DomainEvent,
+│                   DomainCommand, MqttMessage, IncomingMqttMessage,
+│                   PendingLocoNetSend, LocoNetChecksum
+│                   — pure value objects and logic, no I/O
 ├── ports/          DigitalPin, LocoNetPort, MessageLog, ConfigStore, UartPort,
-│                   DigitalInput, Clock, SetupModeRequestStore, RebootTrigger
+│                   DigitalInput, Clock, SetupModeRequestStore, RebootTrigger,
+│                   MqttPort, LocoNetSendScheduler, LocoNetMessageDecoder,
+│                   MqttEventEncoder, MqttCommandDecoder, LocoNetEncoder
 │                   — interfaces only
 ├── application/    LocoNetMessageLogger, CommissioningSession,
-│                   ButtonSetupModeTrigger — the real application services
+│                   ButtonSetupModeTrigger, PendingLocoNetSendScheduler,
+│                   LocoNetMessageRouter, MqttCommandRouter
+│                   — the real application services
+├── turnout/        TurnoutLocoNetDecoder, TurnoutMqttEncoder,
+│                   TurnoutMqttCommandDecoder, TurnoutLocoNetEncoder
+│                   — domain-specific device bridging logic
 └── adapters/       EspDigitalPin, LocoNetEsp32Port, SerialMessageLog,
                      NvsConfigStore, EspUartPort, SerialCommissioningAdapter,
                      EspDigitalInput, ArduinoClock, NvsSetupModeRequestStore,
                      EspRebootTrigger, WebFormCommissioningAdapter,
-                     CaptivePortalServer
+                     CaptivePortalServer, EspWifiPort, PicoMqttPort
                      (#ifdef ARDUINO — the only files that touch real hardware
                      or the vendor library)
-test/support/       Hand-written fakes (no mocking framework) for native tests
+test/support/       Hand-written fakes (no mocking framework) for native tests:
+                     FakeDigitalPin, FakeLocoNetPort, FakeMessageLog,
+                     FakeConfigStore, FakeUartPort, FakeDigitalInput,
+                     FakeClock, FakeSetupModeRequestStore, FakeRebootTrigger,
+                     FakeMqttPort, FakeLocoNetSendScheduler
 src/main.cpp        Composition root — wires real adapters together; no
                      business logic
 ```
@@ -254,9 +290,9 @@ releases, so a commit pin is the closest thing to a stable version):
 
 ## Known limitations
 
-- **`LocoNetPort::send()` has no caller.** It's implemented and
-  build-checked, but no application logic drives it yet — sending will
-  matter once MQTT (or anything else) needs to originate LocoNet traffic.
+- **Turnout is the only device type bridged.** LocoNet sensors, transponders,
+  and other device types remain future work. Only turnout state commands
+  (SL2 format) are decoded, published, and subscribed to on MQTT.
 - **The vendor library can itself write past its own 48-byte message
   buffer** on a malformed long-form frame before this adapter's code ever
   runs — this firmware clamps every copy it makes into and out of that
@@ -264,14 +300,10 @@ releases, so a commit pin is the closest thing to a stable version):
 - **The receive queue holds at most 32 undelivered messages**, dropping the
   oldest first if the main loop falls behind. On a real LocoNet bus at
   normal traffic levels this should never be visible; it would only matter
-  if something slow (like a future blocking network call) shared the same
-  loop and stalled draining for a while.
+  if something slow (like a network call) shared the same loop and stalled
+  draining for a while.
 - **Not tested against real hardware yet** (see the hardware requirements
   section above) — build-checks and native tests only, so far.
-- **WiFi credentials are stored but not yet connected with.** Commissioning
-  (bench-serial or wireless setup) saves an SSID/password to flash; nothing
-  in normal boot mode calls `WiFi.begin()` with them yet. That wiring is
-  part of the future MQTT bridge work, not this commissioning slice.
 
 ## Troubleshooting
 
