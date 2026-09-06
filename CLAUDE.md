@@ -94,12 +94,22 @@ ports (interfaces) and only implemented in adapters.
 
 ### Current source layout
 
-- `lib/Loco2MqttCore/src/domain/` — `Level`, `LocoNetMessage`
-- `lib/Loco2MqttCore/src/ports/` — `DigitalPin`, `LocoNetPort`, `MessageLog`
-- `lib/Loco2MqttCore/src/application/` — `LocoNetMessageLogger`
+- `lib/Loco2MqttCore/src/domain/` — `Level`, `LocoNetMessage`,
+  `LocoNetAdapterConfig`, `ParsedCommand`, `CommandLineParser`, `BootMode`
+  (+ `BootModeSelector`), `SetupFormRenderer`
+- `lib/Loco2MqttCore/src/ports/` — `DigitalPin`, `LocoNetPort`,
+  `MessageLog`, `ConfigStore`, `UartPort`, `DigitalInput`, `Clock`,
+  `SetupModeRequestStore`, `RebootTrigger`
+- `lib/Loco2MqttCore/src/application/` — `LocoNetMessageLogger`,
+  `CommissioningSession`, `ButtonSetupModeTrigger`
 - `lib/Loco2MqttCore/src/adapters/` — `EspDigitalPin`, `LocoNetEsp32Port`,
-  `SerialMessageLog`
-- `test/support/` — `FakeDigitalPin`, `FakeLocoNetPort`, `FakeMessageLog`
+  `SerialMessageLog`, `NvsConfigStore`, `EspUartPort`,
+  `SerialCommissioningAdapter`, `EspDigitalInput`, `ArduinoClock`,
+  `NvsSetupModeRequestStore`, `EspRebootTrigger`,
+  `WebFormCommissioningAdapter`, `CaptivePortalServer`
+- `test/support/` — `FakeDigitalPin`, `FakeLocoNetPort`, `FakeMessageLog`,
+  `FakeConfigStore`, `FakeUartPort`, `FakeDigitalInput`, `FakeClock`,
+  `FakeSetupModeRequestStore`, `FakeRebootTrigger`
 - `test/test_<name>/test_main.cpp` — Catch2 test binaries
 
 **Why `native`'s `build_flags` includes `-Ilib/Loco2MqttCore/src`:**

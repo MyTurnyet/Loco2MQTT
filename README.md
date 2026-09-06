@@ -31,7 +31,9 @@ hardware and independent of any physical LocoNet bus.
 
 ## What it doesn't do yet
 
-- No MQTT client, no broker connection, no topic scheme.
+- No MQTT client, no broker connection, no topic scheme. (WiFi credentials
+  *are* now configurable — see "WiFi commissioning" below — but nothing
+  yet uses the network they connect to.)
 - No JMRI integration beyond what a raw LocoNet tap gives you for free.
 - No use of `LocoNetPort::send()` from any application logic.
 - No PCB — this runs on a breadboard interface only (a PCB phase is noted
@@ -153,6 +155,30 @@ can affect equipment you don't own.
 If you swap to an ESP32-WROVER module rather than a plain WROOM board, note
 that GPIO16/17 are wired internally to that module's PSRAM and are not
 available as GPIO at all — pick different pins.
+
+## WiFi commissioning
+
+The firmware needs a WiFi SSID and password before it can eventually bring
+up MQTT — this is never hardcoded. There are two ways to set it:
+
+**Bench-serial**, over the same USB connection used for `pio device
+monitor` (115200 baud), whenever the device boots with no config saved yet:
+
+```
+set-ssid MyHomeWifi
+set-password hunter2
+save
+```
+
+`show` echoes the current in-progress SSID (never the password). Nothing
+is written to flash until `save`.
+
+**Wireless setup**, for a board already mounted on the layout: hold the
+BOOT button for 3 seconds. The device reboots into an open WiFi access
+point named `Loco2MQTT-Setup` with no password; connecting to it and
+visiting any URL should open a setup page automatically (a captive
+portal). Submitting the form saves the config and reboots back to normal
+operation.
 
 ## Architecture overview
 

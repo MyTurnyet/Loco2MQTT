@@ -1,8 +1,21 @@
 #include <Arduino.h>
+#include <optional>
 
+#include "adapters/ArduinoClock.h"
+#include "adapters/CaptivePortalServer.h"
+#include "adapters/EspDigitalInput.h"
+#include "adapters/EspRebootTrigger.h"
+#include "adapters/EspUartPort.h"
 #include "adapters/LocoNetEsp32Port.h"
+#include "adapters/NvsConfigStore.h"
+#include "adapters/NvsSetupModeRequestStore.h"
+#include "adapters/SerialCommissioningAdapter.h"
 #include "adapters/SerialMessageLog.h"
+#include "adapters/WebFormCommissioningAdapter.h"
+#include "application/ButtonSetupModeTrigger.h"
+#include "application/CommissioningSession.h"
 #include "application/LocoNetMessageLogger.h"
+#include "domain/BootMode.h"
 
 namespace
 {
@@ -18,24 +31,81 @@ namespace
     // connecting to a live bus — see README.md "Hardware configuration".
     constexpr int kLocoNetTxPin = 17;
 
+    // The ESP32's BOOT button, wired active-low with an internal pull-up.
+    constexpr int kBootButtonPin = 0;
+
     constexpr unsigned long kSerialBaudRate = 115200;
+
+    BootMode bootMode = BootMode::Normal;
 }
 
-LocoNetEsp32Port locoNetPort(kLocoNetRxPin, kLocoNetTxPin);
+NvsConfigStore configStore;
+NvsSetupModeRequestStore setupModeRequestStore;
+ArduinoClock systemClock;
+EspDigitalInput bootButton(kBootButtonPin);
+EspUartPort uartPort;
+EspRebootTrigger rebootTrigger;
 SerialMessageLog messageLog;
-LocoNetMessageLogger logger(locoNetPort, messageLog);
+
+std::optional<LocoNetEsp32Port> locoNetPort;
+std::optional<LocoNetMessageLogger> logger;
+std::optional<ButtonSetupModeTrigger> setupModeTrigger;
+std::optional<CommissioningSession> commissioningSession;
+std::optional<SerialCommissioningAdapter> serialCommissioning;
+std::optional<WebFormCommissioningAdapter> webFormAdapter;
+std::optional<CaptivePortalServer> captivePortal;
+
+namespace
+{
+    void setupNormalOrNeedsCommissioning()
+    {
+        locoNetPort.emplace(kLocoNetRxPin, kLocoNetTxPin);
+        logger.emplace(*locoNetPort, messageLog);
+        setupModeTrigger.emplace(bootButton, systemClock, setupModeRequestStore);
+        if (bootMode == BootMode::NeedsCommissioning)
+        {
+            commissioningSession.emplace(configStore);
+            serialCommissioning.emplace(uartPort, *commissioningSession);
+        }
+    }
+
+    void setupWirelessSetup()
+    {
+        webFormAdapter.emplace(configStore, rebootTrigger);
+        captivePortal.emplace(*webFormAdapter);
+        captivePortal->begin();
+    }
+}
 
 void setup()
 {
     Serial.begin(kSerialBaudRate);
-    // locoNetPort's hardware is already initialized by LocoNetESPSerial's
-    // constructor (which self-calls begin() when either pin is
-    // non-negative); LocoNetEsp32Port::begin() is a documented no-op, so it
-    // is intentionally not called here to avoid a second hardware init.
+    bootMode = selectBootMode(configStore.load(), setupModeRequestStore.consumeIfRequested());
+    if (bootMode == BootMode::WirelessSetup)
+    {
+        setupWirelessSetup();
+    }
+    else
+    {
+        setupNormalOrNeedsCommissioning();
+    }
 }
 
 void loop()
 {
-    locoNetPort.update();
-    logger.update();
+    if (bootMode == BootMode::WirelessSetup)
+    {
+        captivePortal->update();
+        return;
+    }
+    locoNetPort->update();
+    logger->update();
+    if (setupModeTrigger->update())
+    {
+        ESP.restart();
+    }
+    if (bootMode == BootMode::NeedsCommissioning)
+    {
+        serialCommissioning->update();
+    }
 }
