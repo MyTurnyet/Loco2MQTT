@@ -128,6 +128,7 @@ public:
     virtual ~LocoNetMessageDecoder() = default;
     virtual bool canDecode(uint8_t opcode) const = 0;
     virtual std::optional<DomainEvent> decode(const LocoNetMessage& message) = 0;
+    virtual std::vector<DomainEvent> allKnownStates() const = 0;
 };
 
 // ports/MqttEventEncoder.h
@@ -161,7 +162,7 @@ public:
 };
 ```
 
-**Deviation from the architecture doc's literal `LocoNetMessageDecoder`
+**Deviations from the architecture doc's literal `LocoNetMessageDecoder`
 signature, and why:** the doc's example returns `DomainEvent` unconditionally
 from a `const decode()`. This sub-project's spec requires publishing `state`
 "only when the value actually changes... compare against the last-known
@@ -174,6 +175,13 @@ encoder (which shouldn't need to know "no event" is possible). It belongs in
 `std::optional<DomainEvent>`, where `nullopt` means "decoded fine, nothing
 changed, don't publish." `MqttCommandDecoder`/`MqttEventEncoder`/
 `LocoNetEncoder` match the architecture doc's shapes exactly.
+
+A second addition, `allKnownStates() const`, exists solely to support the
+periodic full re-publish described under "MQTT contract" below — it returns
+a `DomainEvent` for every address the decoder currently has state for
+(empty for a freshly booted decoder that hasn't seen any traffic yet). Any
+future read-only device type implements it the same way, trivially, from
+whatever state map it already keeps for its own dedup logic.
 
 ## PendingLocoNetSendScheduler
 
@@ -208,12 +216,17 @@ this is a genuine object under test, not a mock standing in for one.
 Exactly as the architecture doc describes, and pure logic in both cases —
 tested with 2-3 trivial fake decoders each, independent of turnout specifics:
 
-- `LocoNetMessageRouter` — constructed with a `vector<LocoNetMessageDecoder*>`
-  (constructor injection, wired once in the composition root). Given an
-  incoming `LocoNetMessage`, finds the decoder whose `canDecode` matches the
-  opcode, decodes it (may yield nothing — see the dedup note above), forwards
-  any resulting event to the matching `MqttEventEncoder`, publishes via
-  `MqttPort::publish()`.
+- `LocoNetMessageRouter` — constructed with a
+  `vector<pair<LocoNetMessageDecoder*, MqttEventEncoder*>>`, an `MqttPort&`,
+  and a `Clock&` (constructor injection, wired once in the composition
+  root). Given an incoming `LocoNetMessage`, finds the pair whose decoder's
+  `canDecode` matches the opcode, decodes it (may yield nothing — see the
+  dedup note above), and if it did, encodes and publishes it via
+  `MqttPort::publish()`. Its `update()` (called every `loop()` tick) checks
+  the injected `Clock` against `kStateRepublishIntervalMs = 30000` and, when
+  due, calls `allKnownStates()` on every registered decoder and publishes
+  each result through its paired encoder — the late-subscriber fix described
+  under "MQTT contract" above.
 - `MqttCommandRouter` — constructed with a `vector<MqttCommandDecoder*>`.
   Parses the incoming topic's device-type segment once, dispatches to the
   matching decoder, forwards the resulting command to the matching
@@ -252,31 +265,93 @@ public:
     void encode(const DomainCommand&, PendingLocoNetSendScheduler&) const override;
     // sendNow(onPulse); sendAfter(offPulse, kOffPulseDelayMs)
 };
+
+// domain/LocoNetChecksum.h — pure helper, needed because the vendor
+// library's TX path never computes one itself (see "Protocol bytes" below)
+uint8_t computeLocoNetChecksum(const std::vector<uint8_t>& bytesBeforeChecksum);
 ```
 
 ### MQTT contract
 
-| Topic | Retained | Payload |
+| Topic | Retained (requested) | Payload |
 |---|---|---|
 | `loconet/turnout/<address>/state` | yes | `"CLOSED"` \| `"THROWN"` |
 | `loconet/turnout/<address>/set` | no | `"CLOSED"` \| `"THROWN"` |
 
-QoS: use QoS 1 if PicoMQTT supports it without extra work; QoS 0 is
-acceptable if not. Retained state plus reconnect-triggered republish is
-enough reliability for this use case — this sub-project does not block on
-QoS 1 support.
+**QoS and retained-flag reality, confirmed against
+[PicoMQTT's actual README](https://github.com/mlesniew/PicoMQTT):** its
+broker mode "only supports MQTT QoS level 0, ignores will and retained
+messages" — there is no QoS 1 support and the `retained` flag has no effect
+at all in broker mode. `MqttMessage::retained()` is still set `true` for
+the `state` topic (so the code documents intent and a future broker swap
+gets it for free), but no reliability is derived from it today.
 
-### Protocol bytes — resolved during plan-writing, not guessed here
+**Late-subscriber gap and the fix, per the user's decision:** because
+retained delivery doesn't exist and PicoMQTT's `Server` exposes no
+per-client subscribe/connect hook, a device that subscribes to
+`loconet/turnout/<address>/state` after boot would otherwise learn nothing
+until the next physical change. `LocoNetMessageRouter` closes this gap with
+a periodic full re-publish: every `kStateRepublishIntervalMs = 30000`, it
+asks every decoder for everything it currently knows
+(`LocoNetMessageDecoder::allKnownStates()`, a new port method — see below)
+and publishes each one through the matching encoder, in addition to
+publishing immediately on every real change. A late subscriber is
+guaranteed a correct value within 30 seconds of connecting.
+
+### Protocol bytes — cited from JMRI, not guessed
 
 `LocoNetESP32HB` (the vendor library already in use) is a raw byte
 transport only; it defines no `OPC_SW_REQ`/`OPC_SW_REP` opcode or bit-field
-constants. The exact address-bit-split, direction-bit, and on/off-bit
-polarity must come from an authoritative source. Per the user's direction,
-the implementation plan will cite JMRI's own open-source LocoNet decoding
-logic for the exact byte layout used in `TurnoutLocoNetDecoder`/
-`TurnoutLocoNetEncoder`'s test cases and implementation — fetched and cited
-by file/commit during plan-writing, never assumed from memory, and never
-left as a placeholder in the finished plan.
+constants, and its `lnWriteMsg`/`hybrid_write` path copies `lnData` verbatim
+onto the wire with **no checksum computation of its own** — confirmed by
+reading `.pio/libdeps/esp32dev/ESPLocoNetHybridESP32/src/IoTT_LocoNetHBESP32.cpp`
+directly: the RX path calls `getXORCheck(...)` to *validate* incoming
+frames, but the TX path (`lnWriteMsg` → `hybrid_write`) never calls it.
+**`TurnoutLocoNetEncoder` must compute and append the checksum byte itself.**
+
+Bit layout, cited from JMRI's `LnConstants.java`
+(`java/src/jmri/jmrix/loconet/LnConstants.java`,
+[JMRI/JMRI on GitHub](https://github.com/JMRI/JMRI/blob/master/java/src/jmri/jmrix/loconet/LnConstants.java)):
+
+```
+OPC_SW_REQ      = 0xB0
+OPC_SW_REP      = 0xB1
+OPC_SW_REQ_DIR  = 0x20   // in OPC_SW_REQ's SW2: set = Closed, clear = Thrown
+OPC_SW_REQ_OUT  = 0x10   // in OPC_SW_REQ's SW2: set = output on, clear = output off
+OPC_SW_REP_INPUTS = 0x40 // in OPC_SW_REP's SW2: set = sensor/input report, clear = switch/output report
+OPC_SW_REP_CLOSED = 0x20 // in OPC_SW_REP's SW2, only meaningful when INPUTS is clear: set = Closed
+```
+
+**`OPC_SW_REQ` — 4 bytes: `[0xB0, SW1, SW2, CHECKSUM]`** (both the message
+this bridge transmits, and the echo/other-throttle traffic it receives on
+the same opcode):
+- `SW1 = (address - 1) & 0x7F` — low 7 bits of the zero-based address.
+- `SW2 = (((address - 1) >> 7) & 0x0F) | (position == Closed ? 0x20 : 0x00) | (outputOn ? 0x10 : 0x00)`
+  — low nibble is the zero-based address's high bits (sufficient for this
+  spec's 1..2048 range, which needs only bits 7-10); `0x20` is
+  `OPC_SW_REQ_DIR`; `0x10` is `OPC_SW_REQ_OUT`.
+- `CHECKSUM` — the byte `X` such that `0xB0 ^ SW1 ^ SW2 ^ X == 0xFF`
+  (LocoNet's standard XOR checksum convention; matches the vendor library's
+  own `getXORCheck` validation, which requires the XOR of all message bytes
+  including the checksum to equal `0xFF`).
+- The on-pulse is this message with `outputOn = true`; the off-pulse
+  (sent `kOffPulseDelayMs` later via `PendingLocoNetSendScheduler`) is the
+  same address and direction with `outputOn = false`.
+
+**`OPC_SW_REP` — decode only, address/direction extraction (v1 handles only
+the switch/output-report variant; a sensor/input report is decoded to
+`nullopt` — not a gap to fill, matching the doc's explicit "not one to
+build speculatively" note)**:
+- If `SW2 & 0x40` (`OPC_SW_REP_INPUTS`) is set: this is a sensor report, not
+  a commanded-position report — `decode()` returns `nullopt`.
+- Otherwise: `address = (((SW2 & 0x0F) << 7) | (SW1 & 0x7F)) + 1`;
+  `position = (SW2 & 0x20) ? Closed : Thrown`.
+
+`TurnoutLocoNetDecoder::canDecode()` returns true for both `0xB0` and
+`0xB1`; `decode()` applies `OPC_SW_REQ`'s address/direction extraction
+(same formula as above, ignoring the `OPC_SW_REQ_OUT` on/off bit — both the
+on-pulse and its later off-pulse describe the same commanded position) for
+`0xB0`, and the `OPC_SW_REP` rule above for `0xB1`.
 
 ### Turnout pulse timing
 
@@ -297,10 +372,16 @@ hardware shims — no native test, verified by `pio run -e esp32dev`):
   never falls back into the wireless-setup AP on its own — commissioning
   stays a deliberate, BOOT-button-triggered action.
 - `PicoMqttPort implements MqttPort` — wraps a `PicoMQTT::Server` instance
-  running on-device. Internally subscribes itself to `loconet/+/+/set` and
-  queues incoming messages for pull-based `receiveCommand()`. Its `update()`
-  pumps PicoMQTT's own loop, mirroring the existing
-  `locoNetPort->update()` pattern in `src/main.cpp`.
+  running on-device, confirmed against
+  [PicoMQTT's README](https://github.com/mlesniew/PicoMQTT):
+  `PicoMQTT::Server mqtt;` constructed with no arguments, `mqtt.begin()`
+  called once (after WiFi is up), `mqtt.publish(topic, payload)` for
+  `MqttPort::publish()`, `mqtt.subscribe("loconet/+/+/set", callback)`
+  registered once at construction to feed a queue that `receiveCommand()`
+  pulls from (matching this codebase's existing pull-based port style, e.g.
+  `LocoNetPort::receive()`), and `mqtt.loop()` — called from `update()`,
+  mirroring the existing `locoNetPort->update()` pattern in `src/main.cpp`
+  — to pump client connections and message routing.
 - New pinned dependency in `platformio.ini`: PicoMQTT, pinned to a specific
   commit (same convention as `LocoNetESP32HB`/`ArduinoJson`, since neither
   repo is guaranteed to have tagged releases).
@@ -320,22 +401,27 @@ excludes the LocoNet/MQTT slice entirely, as it already does today.
 Two-tier, matching the commissioning sub-project's precedent:
 
 - **Native-tested** (fakes only, no mocking framework): `TurnoutAddress`,
-  `TurnoutStateChanged`/`SetTurnoutPosition`, `LocoNetMessageRouter`,
-  `MqttCommandRouter`, `PendingLocoNetSendScheduler` (with
-  `FakeLocoNetPort`+`FakeClock`), `TurnoutLocoNetDecoder`,
-  `TurnoutMqttEncoder`, `TurnoutMqttCommandDecoder`, `TurnoutLocoNetEncoder`
-  (with the real scheduler over fakes). A new `FakeMqttPort` joins
+  `TurnoutStateChanged`/`SetTurnoutPosition`, `computeLocoNetChecksum`,
+  `LocoNetMessageRouter` (dispatch, dedup pass-through, and the periodic
+  `allKnownStates()` re-publish path, all with trivial fake decoders/
+  encoders plus `FakeMqttPort`+`FakeClock`), `MqttCommandRouter`,
+  `PendingLocoNetSendScheduler` (with `FakeLocoNetPort`+`FakeClock`),
+  `TurnoutLocoNetDecoder` (including the OPC_SW_REP sensor-report-returns-
+  nullopt case and `allKnownStates()`), `TurnoutMqttEncoder`,
+  `TurnoutMqttCommandDecoder`, `TurnoutLocoNetEncoder` (with the real
+  scheduler over fakes, asserting the exact on-pulse/off-pulse bytes
+  including the computed checksum). A new `FakeMqttPort` joins
   `test/support/` alongside the existing fakes.
 - **Build-check only** (no native test, `pio run -e esp32dev`):
   `EspWifiPort`, `PicoMqttPort` — genuinely hardware-bound, matching
   `LocoNetEsp32Port`'s existing precedent.
 
-## Open items for plan-writing
+## Resolved during design (previously open items)
 
-- Cite JMRI's exact `OPC_SW_REQ`/`OPC_SW_REP` byte layout (address split,
-  direction bit, on/off bit) before writing any turnout decoder/encoder
-  test cases.
-- Confirm PicoMQTT's actual QoS support at implementation time; fall back to
-  QoS 0 silently if QoS 1 isn't available, per the scope decision above.
-- Confirm PicoMQTT's C++ API shape for on-device subscribe/publish (exact
-  method names/signatures) before writing `PicoMqttPort`.
+- **JMRI byte layout** — cited above from `LnConstants.java`; see "Protocol
+  bytes."
+- **PicoMQTT QoS/retained-message support** — confirmed via its README:
+  broker mode is QoS 0 only and ignores retained entirely. Addressed with
+  the periodic full re-publish described under "MQTT contract."
+- **PicoMQTT C++ API shape** — confirmed via its README; see "WiFi
+  connection + PicoMQTT broker" above.
