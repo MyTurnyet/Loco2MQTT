@@ -4,6 +4,7 @@
 #include "adapters/ArduinoClock.h"
 #include "adapters/CaptivePortalServer.h"
 #include "adapters/EspDigitalInput.h"
+#include "adapters/EspMdnsPort.h"
 #include "adapters/EspRebootTrigger.h"
 #include "adapters/EspUartPort.h"
 #include "adapters/EspWifiPort.h"
@@ -66,6 +67,7 @@ std::optional<CaptivePortalServer> captivePortal;
 
 std::optional<EspWifiPort> wifiPort;
 std::optional<PicoMqttPort> mqttPort;
+std::optional<EspMdnsPort> mdnsPort;
 std::optional<PendingLocoNetSendScheduler> sendScheduler;
 std::optional<TurnoutLocoNetDecoder> turnoutLocoNetDecoder;
 std::optional<TurnoutMqttEncoder> turnoutMqttEncoder;
@@ -74,6 +76,7 @@ std::optional<TurnoutLocoNetEncoder> turnoutLocoNetEncoder;
 std::optional<LocoNetMessageRouter> locoNetMessageRouter;
 std::optional<MqttCommandRouter> mqttCommandRouter;
 bool mqttBegun = false;
+bool mdnsBegun = false;
 
 namespace
 {
@@ -81,6 +84,7 @@ namespace
     {
         wifiPort.emplace(config.wifiSsid(), config.wifiPassword());
         mqttPort.emplace();
+        mdnsPort.emplace();
         sendScheduler.emplace(*locoNetPort, systemClock);
         turnoutLocoNetDecoder.emplace();
         turnoutMqttEncoder.emplace();
@@ -162,6 +166,11 @@ void loop()
     {
         mqttPort->begin();
         mqttBegun = true;
+    }
+    if (!mdnsBegun && wifiPort->isConnected())
+    {
+        mdnsPort->begin("loco2mqtt");
+        mdnsBegun = true;
     }
     mqttPort->update();
     sendScheduler->update();

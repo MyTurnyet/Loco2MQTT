@@ -30,20 +30,27 @@ anywhere on the network, and nothing else needs to be installed.
   way to change this).
 - **Auth:** none. No username, no password, no TLS.
 
-**There is no discovery mechanism yet** — no mDNS, no hostname
-advertisement, no broadcast. Find the board's IP once via your router's
-connected-devices list, then set a DHCP reservation for it so the address
-doesn't change later. Because of this:
+**The board advertises itself over mDNS as `loco2mqtt.local`** once it's on
+WiFi — any mDNS-aware OS or library (including `WiFi.hostByName()` on
+another ESP32, or `ping loco2mqtt.local` from a laptop) resolves that name
+to the board's current IP automatically. This is hostname resolution only:
+there's no `_mqtt._tcp.local` service-record advertisement for scan-based
+discovery, so your companion device still needs to be configured with the
+hostname — it just never needs to be re-configured again after the board's
+IP changes. If your platform or library can't do mDNS lookups, fall back to
+finding the board's IP once via your router's connected-devices list and
+setting a DHCP reservation for it.
 
-> **Make the broker host/IP a configurable setting in your companion
-> device, not a hardcoded constant.** It's the one thing about this
-> integration most likely to need changing after you've already shipped a
-> companion device — whether because you re-flash Loco2MQTT, your router
-> reassigns addresses, or you eventually add a second bridge. Whatever your
-> companion device's own commissioning story is (a config file, its own
-> serial commands, a captive portal — mirror whatever pattern you're
-> already using for WiFi credentials), the broker address should go
-> through it too.
+> **Make the broker host a configurable setting in your companion device,
+> not a hardcoded constant** — whether you point it at `loco2mqtt.local` or
+> a raw IP. This is the one thing about this integration most likely to
+> need changing after you've already shipped a companion device — whether
+> because you re-flash Loco2MQTT with a different hostname, your mDNS
+> resolution isn't available on some network, or you eventually add a
+> second bridge. Whatever your companion device's own commissioning story
+> is (a config file, its own serial commands, a captive portal — mirror
+> whatever pattern you're already using for WiFi credentials), the broker
+> address should go through it too.
 
 ## The turnout contract
 
@@ -97,7 +104,9 @@ doesn't exist.
   occupancy, signals — none of it is bridged to MQTT yet. LocoNet traffic
   for those is currently just logged to Loco2MQTT's own serial console,
   not published anywhere your companion device can reach.
-- **No mDNS/hostname advertisement** (see "Finding the broker" above).
+- **No DNS-SD/service-record advertisement** (`_mqtt._tcp.local`) for
+  scan-based discovery — see "Finding the broker" above for what mDNS
+  support exists today (hostname resolution only).
 - **No command acknowledgment.** A `set` either results in a `state`
   change you can observe, or it silently didn't happen (malformed
   input, address out of range, or the physical turnout just didn't move).
