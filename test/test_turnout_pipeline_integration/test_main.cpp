@@ -48,4 +48,10 @@ TEST_CASE("write pipeline: a real MQTT command reaches on-wire LocoNet bytes")
 
     REQUIRE(locoNetPort.sent().size() == 1);
     REQUIRE(locoNetPort.sent()[0].bytes() == std::vector<uint8_t>{0xB0, 0x04, 0x30, 0x7B});
+
+    clock.setNowMilliseconds(250);
+    scheduler.update();
+
+    REQUIRE(locoNetPort.sent().size() == 2);
+    REQUIRE(locoNetPort.sent()[1].bytes() == std::vector<uint8_t>{0xB0, 0x04, 0x20, 0x6B});
 }
