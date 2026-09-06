@@ -42,10 +42,10 @@ shipped).
 ## Domain objects
 
 ```cpp
-// domain/TurnoutAddress.h — immutable, validated
+// domain/TurnoutAddress.h — immutable, deliberately unvalidated
 class TurnoutAddress {
 public:
-    explicit TurnoutAddress(int address);  // valid range: 1..2048 (LocoNet's 11-bit address space)
+    explicit TurnoutAddress(int address);
     int value() const;
 private:
     int address_;
@@ -107,6 +107,16 @@ private:
 };
 ```
 
+**`TurnoutAddress` validates nothing at construction, deliberately:** every
+call site that constructs one already guarantees range 1..2048 by
+construction — `TurnoutLocoNetDecoder`'s bit math can only ever produce
+`((0x0F << 7) | 0x7F) + 1 == 2048` at the high end and `1` at the low end,
+and `TurnoutMqttCommandDecoder` validates the untrusted MQTT address string
+itself *before* constructing one, returning `nullopt` instead (see below).
+Per this project's own principle — validate only at system boundaries, not
+values that can't structurally occur — `TurnoutAddress` needs no runtime
+check of its own.
+
 **`DomainEvent`/`DomainCommand` as `std::variant`, not a base class:** adding a
 future device type means adding one alternative to the variant, not growing
 an inheritance hierarchy. Every consumer (`TurnoutMqttEncoder`, the eventual
@@ -143,7 +153,7 @@ class MqttCommandDecoder {
 public:
     virtual ~MqttCommandDecoder() = default;
     virtual bool canDecode(const std::string& deviceTypeSegment) const = 0;
-    virtual DomainCommand decode(const std::string& address, const std::string& payload) const = 0;
+    virtual std::optional<DomainCommand> decode(const std::string& address, const std::string& payload) const = 0;
 };
 
 // ports/LocoNetEncoder.h
@@ -255,9 +265,11 @@ public:
 class TurnoutMqttCommandDecoder : public MqttCommandDecoder {
 public:
     bool canDecode(const std::string& deviceTypeSegment) const override;  // == "turnout"
-    DomainCommand decode(const std::string& address, const std::string& payload) const override;
-    // rejects malformed address or payload (not exactly "CLOSED"/"THROWN")
-    // right at this boundary, so nothing downstream needs defensive checks
+    std::optional<DomainCommand> decode(const std::string& address, const std::string& payload) const override;
+    // returns nullopt for a malformed address (not an integer, or outside
+    // 1..2048) or payload (not exactly "CLOSED"/"THROWN") right at this
+    // boundary, so nothing downstream needs defensive checks; MqttCommandRouter
+    // silently drops a nullopt result (no LocoNet traffic is sent)
 };
 
 class TurnoutLocoNetEncoder : public LocoNetEncoder {
