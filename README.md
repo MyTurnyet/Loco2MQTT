@@ -146,6 +146,7 @@ Everything hardware-specific lives in one of two places:
 | WiFi retry interval | `lib/Loco2MqttCore/src/adapters/EspWifiPort.h`, `kRetryIntervalMs` | `5000` (ms) | How often the firmware retries connecting to WiFi if it isn't currently connected. Retries forever in the background; never falls back into wireless setup mode on its own. |
 | MQTT command queue cap | `lib/Loco2MqttCore/src/adapters/PicoMqttPort.h`, `kMaxPendingCommands` | `32` | Bounds worst-case heap growth from MQTT clients publishing commands faster than they're drained; oldest commands are dropped first once full. |
 | mDNS hostname | `src/main.cpp`, `kMdnsHostname` | `"loco2mqtt"` | The board answers as `<value>.local` once WiFi connects. Fixed rather than user-configurable — revisit only if a second bridge needs to coexist on the same network. |
+| mDNS retry interval | `lib/Loco2MqttCore/src/adapters/EspMdnsPort.h`, `kRetryIntervalMs` | `5000` (ms) | How often the firmware retries `MDNS.begin()` after a failed attempt (e.g. transient heap exhaustion). Matches `EspWifiPort`'s own retry-interval pattern. |
 
 **TX pin boot safety — read this before picking a different pin.** A GPIO
 that is ever observed high across an ESP32 reset will momentarily turn on

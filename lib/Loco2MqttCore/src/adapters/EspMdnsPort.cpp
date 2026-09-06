@@ -6,6 +6,12 @@
 
 bool EspMdnsPort::begin(const std::string& hostname)
 {
+    const unsigned long now = millis();
+    if (now - lastAttemptAtMillis_ < kRetryIntervalMs)
+    {
+        return false;
+    }
+    lastAttemptAtMillis_ = now;
     return MDNS.begin(hostname.c_str());
 }
 

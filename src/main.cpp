@@ -46,7 +46,9 @@ namespace
 
     constexpr unsigned long kSerialBaudRate = 115200;
 
-    // No `.local` suffix — EspMdnsPort's MDNS.begin() call appends it.
+    // No `.local` suffix — the mDNS responder answers under that domain
+    // for whatever hostname is registered, without it being part of the
+    // value passed to MDNS.begin().
     constexpr const char* kMdnsHostname = "loco2mqtt";
 
     BootMode bootMode = BootMode::Normal;
