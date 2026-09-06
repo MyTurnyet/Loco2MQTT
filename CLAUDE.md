@@ -92,6 +92,32 @@ ports (interfaces) and only implemented in adapters.
 - Classes are built needs-driven: value objects and pure domain logic first,
   then ports and fakes, then the one real application service, then
   adapters, then the composition root last.
+- **`LocoNetPort::receive()` must have exactly one consumer per boot mode.**
+  It's a destructive-read queue — whichever object calls `receive()` first
+  in a given `loop()` tick gets the message, and anything else calling
+  `receive()` afterward sees an empty queue. `src/main.cpp` had this exact
+  bug during development: `LocoNetMessageLogger` and `LocoNetMessageRouter`
+  both drained the same port in `BootMode::Normal`, so the router (which
+  ran second) always found nothing and the whole LocoNet→MQTT bridge was
+  silently dead — invisible to every native test, since each test wires
+  its own isolated fake port with no competing consumer. Fixed by giving
+  `LocoNetMessageRouter` a `MessageLog&` dependency so it logs every
+  message itself; `LocoNetMessageLogger` is now only constructed and
+  ticked in `BootMode::NeedsCommissioning`, which never builds a router.
+  If you ever add a second thing that needs to see LocoNet traffic in
+  Normal mode, route it through the existing consumer — don't add a
+  second `receive()` caller.
+- **Ports never depend on application-layer code.** `LocoNetEncoder`
+  (a port) needs to hand off scheduling work, but the concrete
+  implementation of that scheduling (`PendingLocoNetSendScheduler`) lives
+  in `application/` and depends on other ports itself — so
+  `LocoNetSendScheduler` exists as its own port for `LocoNetEncoder` to
+  depend on instead, with `PendingLocoNetSendScheduler` as its one real
+  implementation. An early design draft had `LocoNetEncoder` take the
+  concrete class directly; caught and fixed before implementation began.
+  Keep this direction when adding new ports: a port's method signatures
+  may only reference domain types and other ports, never anything under
+  `application/`, `turnout/`, or `adapters/`.
 
 ### Current source layout
 

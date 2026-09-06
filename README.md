@@ -84,7 +84,7 @@ pio test -e native
 
 This compiles and runs every domain/application/port test against
 hand-written fakes — no ESP32, no LocoNet bus, no serial port required. All
-32 suites should pass. This is the fast feedback loop for any code change;
+33 suites should pass. This is the fast feedback loop for any code change;
 run it before touching real hardware.
 
 ### 2. Build the firmware
@@ -141,6 +141,10 @@ Everything hardware-specific lives in one of two places:
 | `InverseLogic` | `lib/Loco2MqttCore/src/adapters/LocoNetEsp32Port.cpp`, `LocoNetEsp32Port`'s constructor | hardcoded `true` | This breadboard circuit's 6N137 opto output is inverted; not a runtime option, since it's a property of the physical circuit, not a config choice. |
 | Serial baud rate | `src/main.cpp`, `kSerialBaudRate` | `115200` | Console/logging baud rate — unrelated to LocoNet's own 16.66kbps bus speed. |
 | Receive queue cap | `lib/Loco2MqttCore/src/adapters/LocoNetEsp32Port.cpp`, `kMaxPendingMessages` | `32` | Bounds worst-case heap growth if messages arrive faster than the main loop drains them; oldest messages are dropped first once full. |
+| Turnout on-pulse → off-pulse delay | `lib/Loco2MqttCore/src/turnout/TurnoutLocoNetEncoder.h`, `kOffPulseDelayMs` | `250` (ms) | How long the LocoNet command holds the turnout output "on" before releasing it. This is a device-timing choice, not a wire-protocol fact — if your turnout motor/decoder needs longer to complete its throw, increase this. |
+| State re-publish interval | `lib/Loco2MqttCore/src/application/LocoNetMessageRouter.h`, `kStateRepublishIntervalMs` | `30000` (ms) | How often every known turnout's current state is re-published to MQTT, so a client that subscribes late still learns the current state quickly (works around PicoMQTT's broker not honoring the MQTT retained flag). |
+| WiFi retry interval | `lib/Loco2MqttCore/src/adapters/EspWifiPort.h`, `kRetryIntervalMs` | `5000` (ms) | How often the firmware retries connecting to WiFi if it isn't currently connected. Retries forever in the background; never falls back into wireless setup mode on its own. |
+| MQTT command queue cap | `lib/Loco2MqttCore/src/adapters/PicoMqttPort.h`, `kMaxPendingCommands` | `32` | Bounds worst-case heap growth from MQTT clients publishing commands faster than they're drained; oldest commands are dropped first once full. |
 
 **TX pin boot safety — read this before picking a different pin.** A GPIO
 that is ever observed high across an ESP32 reset will momentarily turn on
@@ -248,11 +252,17 @@ src/main.cpp        Composition root — wires real adapters together; no
                      business logic
 ```
 
-`LocoNetMessageLogger` is the original vertical slice: on each call to
+`LocoNetMessageLogger` was the original vertical slice: on each call to
 `update()`, it drains every message currently waiting on `LocoNetPort` and
-forwards each one to `MessageLog`. Wired to real hardware in `src/main.cpp`
-as `LocoNetEsp32Port` (RX/TX over the breadboard interface) →
-`SerialMessageLog` (prints to the Arduino `Serial` console).
+forwards each one to `MessageLog`. It's still used exactly that way during
+bench-serial commissioning (`BootMode::NeedsCommissioning`), wired to
+`LocoNetEsp32Port` → `SerialMessageLog`. Once commissioning is complete
+(`BootMode::Normal`), `LocoNetMessageRouter` takes over as the sole reader
+of `LocoNetPort` and does the same serial logging itself (via the
+`MessageLog` it's constructed with) in addition to the MQTT bridging
+described above — two separate objects both draining the same
+LocoNet receive queue would starve one of them, so only one is ever active
+per boot mode.
 
 `CommissioningSession` (driven by `SerialCommissioningAdapter` over the bench
 serial console, or by `WebFormCommissioningAdapter`/`CaptivePortalServer` over
@@ -271,9 +281,11 @@ technical reference in this repo.
 The full implementation plans, in order, with the reasoning behind each
 design decision, are at
 [`docs/superpowers/plans/2026-09-04-loconet-esp32-adapter-scaffold.md`](docs/superpowers/plans/2026-09-04-loconet-esp32-adapter-scaffold.md)
-(the original RX/TX/logging scaffold) and
+(the original RX/TX/logging scaffold),
 [`docs/superpowers/plans/2026-09-05-node-config-commissioning.md`](docs/superpowers/plans/2026-09-05-node-config-commissioning.md)
-(WiFi commissioning).
+(WiFi commissioning), and
+[`docs/superpowers/plans/2026-09-06-mqtt-turnout-bridge.md`](docs/superpowers/plans/2026-09-06-mqtt-turnout-bridge.md)
+(the MQTT turnout bridge).
 
 ### Third-party dependencies
 
