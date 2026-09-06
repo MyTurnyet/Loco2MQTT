@@ -96,7 +96,8 @@ ports (interfaces) and only implemented in adapters.
 
 - `lib/Loco2MqttCore/src/domain/` — `Level`, `LocoNetMessage`,
   `LocoNetAdapterConfig`, `ParsedCommand`, `CommandLineParser`, `BootMode`
-  (+ `BootModeSelector`), `SetupFormRenderer`
+  (`selectBootMode` is a free function, not a class), `SetupFormRenderer`,
+  `LineAssembler`
 - `lib/Loco2MqttCore/src/ports/` — `DigitalPin`, `LocoNetPort`,
   `MessageLog`, `ConfigStore`, `UartPort`, `DigitalInput`, `Clock`,
   `SetupModeRequestStore`, `RebootTrigger`

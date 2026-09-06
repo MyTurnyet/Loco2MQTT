@@ -31,9 +31,10 @@ hardware and independent of any physical LocoNet bus.
 
 ## What it doesn't do yet
 
-- No MQTT client, no broker connection, no topic scheme. (WiFi credentials
-  *are* now configurable — see "WiFi commissioning" below — but nothing
-  yet uses the network they connect to.)
+- No MQTT client, no broker connection, no topic scheme. WiFi credentials
+  *are* now configurable — see "WiFi commissioning" below — but the
+  firmware doesn't join WiFi with them yet in normal operation; today
+  they're only captured and persisted for the future MQTT bridge to use.
 - No JMRI integration beyond what a raw LocoNet tap gives you for free.
 - No use of `LocoNetPort::send()` from any application logic.
 - No PCB — this runs on a breadboard interface only (a PCB phase is noted
@@ -83,7 +84,7 @@ pio test -e native
 
 This compiles and runs every domain/application/port test against
 hand-written fakes — no ESP32, no LocoNet bus, no serial port required. All
-6 suites should pass. This is the fast feedback loop for any code change;
+20 suites should pass. This is the fast feedback loop for any code change;
 run it before touching real hardware.
 
 ### 2. Build the firmware
@@ -191,10 +192,19 @@ adapters, each guarded with `#ifdef ARDUINO`.
 
 ```
 lib/Loco2MqttCore/src/
-├── domain/         Level, LocoNetMessage — pure value objects, no I/O
-├── ports/          DigitalPin, LocoNetPort, MessageLog — interfaces only
-├── application/     LocoNetMessageLogger — the one real application service
-└── adapters/       EspDigitalPin, LocoNetEsp32Port, SerialMessageLog
+├── domain/         Level, LocoNetMessage, LocoNetAdapterConfig, ParsedCommand,
+│                   CommandLineParser, BootMode, SetupFormRenderer,
+│                   LineAssembler — pure value objects and logic, no I/O
+├── ports/          DigitalPin, LocoNetPort, MessageLog, ConfigStore, UartPort,
+│                   DigitalInput, Clock, SetupModeRequestStore, RebootTrigger
+│                   — interfaces only
+├── application/    LocoNetMessageLogger, CommissioningSession,
+│                   ButtonSetupModeTrigger — the real application services
+└── adapters/       EspDigitalPin, LocoNetEsp32Port, SerialMessageLog,
+                     NvsConfigStore, EspUartPort, SerialCommissioningAdapter,
+                     EspDigitalInput, ArduinoClock, NvsSetupModeRequestStore,
+                     EspRebootTrigger, WebFormCommissioningAdapter,
+                     CaptivePortalServer
                      (#ifdef ARDUINO — the only files that touch real hardware
                      or the vendor library)
 test/support/       Hand-written fakes (no mocking framework) for native tests
@@ -202,21 +212,32 @@ src/main.cpp        Composition root — wires real adapters together; no
                      business logic
 ```
 
-`LocoNetMessageLogger` is the whole current vertical slice: on each call to
+`LocoNetMessageLogger` is the original vertical slice: on each call to
 `update()`, it drains every message currently waiting on `LocoNetPort` and
 forwards each one to `MessageLog`. Wired to real hardware in `src/main.cpp`
 as `LocoNetEsp32Port` (RX/TX over the breadboard interface) →
 `SerialMessageLog` (prints to the Arduino `Serial` console).
 
+`CommissioningSession` (driven by `SerialCommissioningAdapter` over the bench
+serial console, or by `WebFormCommissioningAdapter`/`CaptivePortalServer` over
+the wireless setup AP) is the WiFi-commissioning vertical slice added since —
+see "WiFi commissioning" above for the two ways to drive it, and
+`selectBootMode` (`domain/BootMode.h`) for how `src/main.cpp` decides which
+path a boot takes.
+
 For a deeper technical write-up — the vendor library's internal boot
 sequence, why the receive queue is capped and how, exactly which malformed
-frames get filtered and why — see [`CLAUDE.md`](CLAUDE.md), which was
-written for an AI coding agent but doubles as the most detailed technical
-reference in this repo.
+frames get filtered and why, plus the GPIO0 strapping-pin hazard the
+commissioning button trigger has to avoid — see [`CLAUDE.md`](CLAUDE.md),
+which was written for an AI coding agent but doubles as the most detailed
+technical reference in this repo.
 
-The full implementation plan (all 9 build tasks, in order, with the
-reasoning behind each design decision) is at
-[`docs/superpowers/plans/2026-09-04-loconet-esp32-adapter-scaffold.md`](docs/superpowers/plans/2026-09-04-loconet-esp32-adapter-scaffold.md).
+The full implementation plans, in order, with the reasoning behind each
+design decision, are at
+[`docs/superpowers/plans/2026-09-04-loconet-esp32-adapter-scaffold.md`](docs/superpowers/plans/2026-09-04-loconet-esp32-adapter-scaffold.md)
+(the original RX/TX/logging scaffold) and
+[`docs/superpowers/plans/2026-09-05-node-config-commissioning.md`](docs/superpowers/plans/2026-09-05-node-config-commissioning.md)
+(WiFi commissioning).
 
 ### Third-party dependencies
 
@@ -247,6 +268,10 @@ releases, so a commit pin is the closest thing to a stable version):
   loop and stalled draining for a while.
 - **Not tested against real hardware yet** (see the hardware requirements
   section above) — build-checks and native tests only, so far.
+- **WiFi credentials are stored but not yet connected with.** Commissioning
+  (bench-serial or wireless setup) saves an SSID/password to flash; nothing
+  in normal boot mode calls `WiFi.begin()` with them yet. That wiring is
+  part of the future MQTT bridge work, not this commissioning slice.
 
 ## Troubleshooting
 
