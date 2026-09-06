@@ -6,16 +6,25 @@
 #include "adapters/EspDigitalInput.h"
 #include "adapters/EspRebootTrigger.h"
 #include "adapters/EspUartPort.h"
+#include "adapters/EspWifiPort.h"
 #include "adapters/LocoNetEsp32Port.h"
 #include "adapters/NvsConfigStore.h"
 #include "adapters/NvsSetupModeRequestStore.h"
+#include "adapters/PicoMqttPort.h"
 #include "adapters/SerialCommissioningAdapter.h"
 #include "adapters/SerialMessageLog.h"
 #include "adapters/WebFormCommissioningAdapter.h"
 #include "application/ButtonSetupModeTrigger.h"
 #include "application/CommissioningSession.h"
 #include "application/LocoNetMessageLogger.h"
+#include "application/LocoNetMessageRouter.h"
+#include "application/MqttCommandRouter.h"
+#include "application/PendingLocoNetSendScheduler.h"
 #include "domain/BootMode.h"
+#include "turnout/TurnoutLocoNetDecoder.h"
+#include "turnout/TurnoutLocoNetEncoder.h"
+#include "turnout/TurnoutMqttCommandDecoder.h"
+#include "turnout/TurnoutMqttEncoder.h"
 
 namespace
 {
@@ -55,8 +64,36 @@ std::optional<SerialCommissioningAdapter> serialCommissioning;
 std::optional<WebFormCommissioningAdapter> webFormAdapter;
 std::optional<CaptivePortalServer> captivePortal;
 
+std::optional<EspWifiPort> wifiPort;
+std::optional<PicoMqttPort> mqttPort;
+std::optional<PendingLocoNetSendScheduler> sendScheduler;
+std::optional<TurnoutLocoNetDecoder> turnoutLocoNetDecoder;
+std::optional<TurnoutMqttEncoder> turnoutMqttEncoder;
+std::optional<TurnoutMqttCommandDecoder> turnoutMqttCommandDecoder;
+std::optional<TurnoutLocoNetEncoder> turnoutLocoNetEncoder;
+std::optional<LocoNetMessageRouter> locoNetMessageRouter;
+std::optional<MqttCommandRouter> mqttCommandRouter;
+
 namespace
 {
+    void setupMqttBridge(const LocoNetAdapterConfig& config)
+    {
+        wifiPort.emplace(config.wifiSsid(), config.wifiPassword());
+        mqttPort.emplace();
+        sendScheduler.emplace(*locoNetPort, systemClock);
+        turnoutLocoNetDecoder.emplace();
+        turnoutMqttEncoder.emplace();
+        turnoutMqttCommandDecoder.emplace();
+        turnoutLocoNetEncoder.emplace();
+        locoNetMessageRouter.emplace(*locoNetPort, *mqttPort, systemClock,
+                                      std::vector<std::pair<LocoNetMessageDecoder*, MqttEventEncoder*>>{
+                                          {&*turnoutLocoNetDecoder, &*turnoutMqttEncoder}});
+        mqttCommandRouter.emplace(*mqttPort, *sendScheduler,
+                                   std::vector<std::pair<MqttCommandDecoder*, LocoNetEncoder*>>{
+                                       {&*turnoutMqttCommandDecoder, &*turnoutLocoNetEncoder}});
+        mqttPort->begin();
+    }
+
     void setupNormalOrNeedsCommissioning()
     {
         locoNetPort.emplace(kLocoNetRxPin, kLocoNetTxPin);
@@ -66,7 +103,9 @@ namespace
         {
             commissioningSession.emplace(configStore);
             serialCommissioning.emplace(uartPort, *commissioningSession);
+            return;
         }
+        setupMqttBridge(configStore.load());
     }
 
     void setupWirelessSetup()
@@ -107,5 +146,11 @@ void loop()
     if (bootMode == BootMode::NeedsCommissioning)
     {
         serialCommissioning->update();
+        return;
     }
+    wifiPort->update();
+    mqttPort->update();
+    sendScheduler->update();
+    locoNetMessageRouter->update();
+    mqttCommandRouter->update();
 }
