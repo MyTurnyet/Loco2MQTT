@@ -146,3 +146,37 @@ TEST_CASE("does not republish before the republish interval elapses")
 
     REQUIRE(mqttPort.published().size() == 0);
 }
+
+TEST_CASE("dispatches to the second decoder when first decoder cannot decode the message")
+{
+    FakeLocoNetPort locoNetPort;
+    FakeMqttPort mqttPort;
+    FakeClock clock;
+    FakeDecoder decoder1(0xB0);
+    FakeDecoder decoder2(0xB4);
+    FakeEncoder encoder1;
+    FakeEncoder encoder2;
+    decoder2.setNextResult(DomainEvent(TurnoutStateChanged(TurnoutAddress(5), TurnoutPosition::Closed)));
+    LocoNetMessageRouter router(locoNetPort, mqttPort, clock, {{&decoder1, &encoder1}, {&decoder2, &encoder2}});
+    locoNetPort.enqueue(LocoNetMessage({0xB4, 0x04, 0x30, 0x7B}));
+
+    router.update();
+
+    REQUIRE(decoder1.decodeCallCount() == 0);
+    REQUIRE(mqttPort.published().size() == 1);
+}
+
+TEST_CASE("does not crash on empty LocoNet message")
+{
+    FakeLocoNetPort locoNetPort;
+    FakeMqttPort mqttPort;
+    FakeClock clock;
+    FakeDecoder decoder(0xB0);
+    FakeEncoder encoder;
+    LocoNetMessageRouter router(locoNetPort, mqttPort, clock, {{&decoder, &encoder}});
+    locoNetPort.enqueue(LocoNetMessage({}));
+
+    router.update();
+
+    REQUIRE(decoder.decodeCallCount() == 0);
+}

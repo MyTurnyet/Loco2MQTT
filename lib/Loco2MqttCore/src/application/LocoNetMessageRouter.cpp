@@ -13,6 +13,10 @@ void LocoNetMessageRouter::update()
 
 void LocoNetMessageRouter::handleMessage(const LocoNetMessage& message)
 {
+    if (message.bytes().empty())
+    {
+        return;
+    }
     for (auto& [decoder, encoder] : decoders_)
     {
         if (!decoder->canDecode(message.bytes()[0]))
