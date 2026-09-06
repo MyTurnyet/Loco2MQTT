@@ -16,6 +16,11 @@ namespace
     {
         return (message.bytes()[2] & kClosedBit) ? TurnoutPosition::Closed : TurnoutPosition::Thrown;
     }
+
+    bool isSensorReport(const LocoNetMessage& message)
+    {
+        return message.bytes()[0] == kOpcSwRep && (message.bytes()[2] & kSwRepInputs);
+    }
 }
 
 bool TurnoutLocoNetDecoder::canDecode(uint8_t opcode) const
@@ -23,20 +28,28 @@ bool TurnoutLocoNetDecoder::canDecode(uint8_t opcode) const
     return opcode == kOpcSwReq || opcode == kOpcSwRep;
 }
 
-std::optional<DomainEvent> TurnoutLocoNetDecoder::decode(const LocoNetMessage& message)
+bool TurnoutLocoNetDecoder::shouldEmitPositionChange(int address, TurnoutPosition position)
 {
-    if (message.bytes()[0] == kOpcSwRep && (message.bytes()[2] & kSwRepInputs))
-    {
-        return std::nullopt;
-    }
-    const int address = addressFrom(message);
-    const TurnoutPosition position = positionFrom(message);
     auto existing = lastKnownPosition_.find(address);
     if (existing != lastKnownPosition_.end() && existing->second == position)
     {
-        return std::nullopt;
+        return false;
     }
     lastKnownPosition_[address] = position;
+    return true;
+}
+
+std::optional<DomainEvent> TurnoutLocoNetDecoder::decode(const LocoNetMessage& message)
+{
+    if (isSensorReport(message))
+        return std::nullopt;
+
+    const int address = addressFrom(message);
+    const TurnoutPosition position = positionFrom(message);
+
+    if (!shouldEmitPositionChange(address, position))
+        return std::nullopt;
+
     return DomainEvent(TurnoutStateChanged(TurnoutAddress(address), position));
 }
 

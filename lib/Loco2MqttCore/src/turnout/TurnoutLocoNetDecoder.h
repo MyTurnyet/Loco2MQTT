@@ -16,4 +16,5 @@ public:
 
 private:
     std::map<int, TurnoutPosition> lastKnownPosition_;
+    bool shouldEmitPositionChange(int address, TurnoutPosition position);
 };
