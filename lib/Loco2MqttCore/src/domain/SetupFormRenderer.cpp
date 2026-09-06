@@ -1,5 +1,7 @@
 #include "SetupFormRenderer.h"
 
+#include "domain/FirmwareVersion.h"
+
 namespace
 {
     void appendEscaped(std::string& out, char c)
@@ -28,6 +30,7 @@ namespace
 std::string renderSetupForm(const LocoNetAdapterConfig& config)
 {
     return "<html><body>"
+           "<p>Loco2MQTT v" + std::string(kFirmwareVersion) + "</p>"
            "<form method=\"POST\" action=\"/\">"
            "SSID: <input name=\"ssid\" value=\"" + escapeHtmlAttribute(config.wifiSsid()) + "\"><br>"
            "Password: <input name=\"password\" type=\"password\" value=\"\"><br>"

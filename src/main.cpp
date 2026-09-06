@@ -22,6 +22,7 @@
 #include "application/MqttCommandRouter.h"
 #include "application/PendingLocoNetSendScheduler.h"
 #include "domain/BootMode.h"
+#include "domain/FirmwareVersion.h"
 #include "turnout/TurnoutLocoNetDecoder.h"
 #include "turnout/TurnoutLocoNetEncoder.h"
 #include "turnout/TurnoutMqttCommandDecoder.h"
@@ -137,6 +138,8 @@ namespace
 void setup()
 {
     Serial.begin(kSerialBaudRate);
+    Serial.print("Loco2MQTT v");
+    Serial.println(kFirmwareVersion);
     bootMode = selectBootMode(configStore.load(), setupModeRequestStore.consumeIfRequested());
     if (bootMode == BootMode::WirelessSetup)
     {

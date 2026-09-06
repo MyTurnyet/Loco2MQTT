@@ -1,6 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_test_macros.hpp>
 
+#include "domain/FirmwareVersion.h"
 #include "domain/LocoNetAdapterConfig.h"
 #include "domain/SetupFormRenderer.h"
 
@@ -32,4 +33,13 @@ TEST_CASE("escapes special characters in the SSID so the HTML stays well-formed"
     REQUIRE(page.find("My\"Wifi&Net") == std::string::npos);
     REQUIRE(page.find("&quot;") != std::string::npos);
     REQUIRE(page.find("&amp;") != std::string::npos);
+}
+
+TEST_CASE("shows the firmware version on the page")
+{
+    LocoNetAdapterConfig config("MyHomeWifi", "hunter2");
+
+    std::string page = renderSetupForm(config);
+
+    REQUIRE(page.find(kFirmwareVersion) != std::string::npos);
 }
