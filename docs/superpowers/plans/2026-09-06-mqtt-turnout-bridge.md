@@ -2224,7 +2224,7 @@ TEST_CASE("encodes a Thrown command with the direction bit clear")
     encoder.encode(DomainCommand(SetTurnoutPosition(TurnoutAddress(5), TurnoutPosition::Thrown)), scheduler);
 
     REQUIRE(scheduler.sentNow()[0].bytes() == std::vector<uint8_t>{0xB0, 0x04, 0x10, 0x5B});
-    REQUIRE(scheduler.scheduled()[0].first.bytes() == std::vector<uint8_t>{0xB0, 0x04, 0x00, 0x4F});
+    REQUIRE(scheduler.scheduled()[0].first.bytes() == std::vector<uint8_t>{0xB0, 0x04, 0x00, 0x4B});
 }
 
 TEST_CASE("encodes the maximum address, 2048")
@@ -2238,8 +2238,8 @@ TEST_CASE("encodes the maximum address, 2048")
 }
 ```
 
-`0x4F` above is the off-pulse checksum for address 5, Thrown (`SW2 =
-0x00`): `0xB0 ^ 0x04 ^ 0x00 ^ 0x4F == 0xFF` — hand-verified the same way
+`0x4B` above is the off-pulse checksum for address 5, Thrown (`SW2 =
+0x00`): `0xB0 ^ 0x04 ^ 0x00 ^ 0x4B == 0xFF` — hand-verified the same way
 as the on-pulse values in Task 3.
 
 - [ ] **Step 2: Run test to verify it fails**
