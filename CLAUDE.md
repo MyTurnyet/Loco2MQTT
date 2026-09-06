@@ -4,11 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Purpose
 
-Loco2MQTT — firmware for an ESP32-based LocoNet adapter. Phase 1 (this
-scaffold) proves RX/TX over a breadboard-built opto/transistor interface
-(`docs/breadboard-build-guide.md`) with one working vertical slice: logging
-every received LocoNet message to serial. MQTT bridging is future work, not
-yet started.
+Loco2MQTT — firmware for an ESP32-based LocoNet adapter, built on a
+breadboard-built opto/transistor interface (`docs/breadboard-build-guide.md`).
+It connects to WiFi using stored commissioning credentials, runs PicoMQTT
+as an on-device broker, and bridges turnout state bidirectionally between
+LocoNet and MQTT. MQTT bridging for sensor, transponder, and other device
+types remains future work.
 
 ## Commands
 
