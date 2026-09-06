@@ -143,7 +143,7 @@ ports (interfaces) and only implemented in adapters.
   `SerialCommissioningAdapter`, `EspDigitalInput`, `ArduinoClock`,
   `NvsSetupModeRequestStore`, `EspRebootTrigger`,
   `WebFormCommissioningAdapter`, `CaptivePortalServer`, `EspWifiPort`,
-  `PicoMqttPort`
+  `PicoMqttPort`, `EspMdnsPort`
 - `test/support/` — `FakeDigitalPin`, `FakeLocoNetPort`, `FakeMessageLog`,
   `FakeConfigStore`, `FakeUartPort`, `FakeDigitalInput`, `FakeClock`,
   `FakeSetupModeRequestStore`, `FakeRebootTrigger`, `FakeMqttPort`,

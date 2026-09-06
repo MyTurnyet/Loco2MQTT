@@ -25,7 +25,8 @@ confirmation, watch `state` for the value you asked for.
 Loco2MQTT runs its own MQTT broker on-device — there is no separate broker
 anywhere on the network, and nothing else needs to be installed.
 
-- **Host:** the Loco2MQTT board's IP address on your network.
+- **Host:** `loco2mqtt.local` (once WiFi is up — see below), or the
+  board's IP address on your network.
 - **Port:** `1883` (the MQTT default; PicoMQTT doesn't currently expose a
   way to change this).
 - **Auth:** none. No username, no password, no TLS.
@@ -45,12 +46,14 @@ setting a DHCP reservation for it.
 > not a hardcoded constant** — whether you point it at `loco2mqtt.local` or
 > a raw IP. This is the one thing about this integration most likely to
 > need changing after you've already shipped a companion device — whether
-> because you re-flash Loco2MQTT with a different hostname, your mDNS
-> resolution isn't available on some network, or you eventually add a
-> second bridge. Whatever your companion device's own commissioning story
-> is (a config file, its own serial commands, a captive portal — mirror
-> whatever pattern you're already using for WiFi credentials), the broker
-> address should go through it too.
+> because your mDNS resolution isn't available on some network, your
+> router reassigns addresses, or you eventually add a second bridge (which
+> would need a different hostname, since `loco2mqtt` is currently a fixed
+> constant on the Loco2MQTT side, not something you can reconfigure per
+> board). Whatever your companion device's own commissioning story is (a
+> config file, its own serial commands, a captive portal — mirror whatever
+> pattern you're already using for WiFi credentials), the broker address
+> should go through it too.
 
 ## The turnout contract
 

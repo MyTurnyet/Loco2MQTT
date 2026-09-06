@@ -4,9 +4,9 @@
 
 #include <ESPmDNS.h>
 
-void EspMdnsPort::begin(const std::string& hostname)
+bool EspMdnsPort::begin(const std::string& hostname)
 {
-    MDNS.begin(hostname.c_str());
+    return MDNS.begin(hostname.c_str());
 }
 
 #endif

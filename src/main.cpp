@@ -46,6 +46,9 @@ namespace
 
     constexpr unsigned long kSerialBaudRate = 115200;
 
+    // No `.local` suffix — EspMdnsPort's MDNS.begin() call appends it.
+    constexpr const char* kMdnsHostname = "loco2mqtt";
+
     BootMode bootMode = BootMode::Normal;
 }
 
@@ -169,8 +172,10 @@ void loop()
     }
     if (!mdnsBegun && wifiPort->isConnected())
     {
-        mdnsPort->begin("loco2mqtt");
-        mdnsBegun = true;
+        // Only latches once begin() actually succeeds; a failed attempt
+        // (e.g. transient mdns_init() failure) retries on the next tick
+        // rather than silently giving up for the rest of this boot.
+        mdnsBegun = mdnsPort->begin(kMdnsHostname);
     }
     mqttPort->update();
     sendScheduler->update();
