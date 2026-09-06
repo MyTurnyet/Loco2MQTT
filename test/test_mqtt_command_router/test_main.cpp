@@ -24,6 +24,7 @@ namespace
 
         std::optional<DomainCommand> decode(const std::string& address, const std::string& payload) const override
         {
+            decodeCallCount_++;
             lastAddress_ = address;
             lastPayload_ = payload;
             return nextResult_;
@@ -44,11 +45,17 @@ namespace
             return lastPayload_;
         }
 
+        int decodeCallCount() const
+        {
+            return decodeCallCount_;
+        }
+
     private:
         std::string deviceType_;
         mutable std::optional<DomainCommand> nextResult_;
         mutable std::string lastAddress_;
         mutable std::string lastPayload_;
+        mutable int decodeCallCount_ = 0;
     };
 
     class FakeEncoder : public LocoNetEncoder
@@ -129,4 +136,22 @@ TEST_CASE("a malformed topic with too few segments dispatches nothing")
     router.update();
 
     REQUIRE(encoder.encodeCallCount() == 0);
+}
+
+TEST_CASE("dispatches to the second decoder when first decoder cannot decode the message")
+{
+    FakeMqttPort mqttPort;
+    FakeLocoNetSendScheduler scheduler;
+    FakeDecoder decoder1("sensor");
+    FakeDecoder decoder2("turnout");
+    FakeEncoder encoder1;
+    FakeEncoder encoder2;
+    decoder2.setNextResult(DomainCommand(SetTurnoutPosition(TurnoutAddress(5), TurnoutPosition::Closed)));
+    MqttCommandRouter router(mqttPort, scheduler, {{&decoder1, &encoder1}, {&decoder2, &encoder2}});
+    mqttPort.enqueueCommand(IncomingMqttMessage("loconet/turnout/5/set", "CLOSED"));
+
+    router.update();
+
+    REQUIRE(decoder1.decodeCallCount() == 0);
+    REQUIRE(encoder2.encodeCallCount() == 1);
 }
