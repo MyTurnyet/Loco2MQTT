@@ -98,12 +98,12 @@ private:
 // domain/PendingLocoNetSend.h — one scheduled future send
 class PendingLocoNetSend {
 public:
-    PendingLocoNetSend(LocoNetMessage message, unsigned long dueAtMillis);
+    PendingLocoNetSend(LocoNetMessage message, unsigned long dueAtMilliseconds);
     const LocoNetMessage& message() const;
-    unsigned long dueAtMillis() const;
+    unsigned long dueAtMilliseconds() const;
 private:
     LocoNetMessage message_;
-    unsigned long dueAtMillis_;
+    unsigned long dueAtMilliseconds_;
 };
 ```
 
@@ -156,11 +156,19 @@ public:
     virtual std::optional<DomainCommand> decode(const std::string& address, const std::string& payload) const = 0;
 };
 
+// ports/LocoNetSendScheduler.h — see the layering note below
+class LocoNetSendScheduler {
+public:
+    virtual ~LocoNetSendScheduler() = default;
+    virtual void sendNow(const LocoNetMessage& message) = 0;
+    virtual void sendAfter(const LocoNetMessage& message, unsigned long delayMilliseconds) = 0;
+};
+
 // ports/LocoNetEncoder.h
 class LocoNetEncoder {
 public:
     virtual ~LocoNetEncoder() = default;
-    virtual void encode(const DomainCommand& command, PendingLocoNetSendScheduler& scheduler) const = 0;
+    virtual void encode(const DomainCommand& command, LocoNetSendScheduler& scheduler) const = 0;
 };
 
 // ports/MqttPort.h — mirrors LocoNetPort's send+receive combination for its bus
@@ -193,21 +201,31 @@ a `DomainEvent` for every address the decoder currently has state for
 future read-only device type implements it the same way, trivially, from
 whatever state map it already keeps for its own dedup logic.
 
-## PendingLocoNetSendScheduler
+## LocoNetSendScheduler port and its implementation
 
-A concrete class, not a port — it has no hardware dependency of its own,
-only `LocoNetPort&` and `Clock&`, both already fake-able from the
+**Layering note:** an earlier draft of this design had `LocoNetEncoder`
+(a port) take a concrete `PendingLocoNetSendScheduler` (an application
+class) directly as a parameter — backwards from this project's stated rule
+that ports never depend on application code. Fixed by extracting
+`LocoNetSendScheduler` as its own port (shown above, alongside the other
+four); `PendingLocoNetSendScheduler` is that port's one real
+implementation, and a hand-written `FakeLocoNetSendScheduler` joins
+`test/support/` so `TurnoutLocoNetEncoder`'s tests don't need to route
+through real timing logic to check what it asked to be sent.
+
+`PendingLocoNetSendScheduler` itself has no hardware dependency of its
+own — only `LocoNetPort&` and `Clock&`, both already fake-able from the
 commissioning sub-project. This is what lets the LocoNet write pipeline
 issue a turnout's on-pulse immediately and its off-pulse after a delay
 without ever calling a blocking `delay()`.
 
 ```cpp
 // application/PendingLocoNetSendScheduler.h
-class PendingLocoNetSendScheduler {
+class PendingLocoNetSendScheduler : public LocoNetSendScheduler {
 public:
     PendingLocoNetSendScheduler(LocoNetPort& port, Clock& clock);
-    void sendNow(const LocoNetMessage& message);
-    void sendAfter(const LocoNetMessage& message, unsigned long delayMillis);
+    void sendNow(const LocoNetMessage& message) override;
+    void sendAfter(const LocoNetMessage& message, unsigned long delayMilliseconds) override;
     void update();  // called every loop() tick; sends anything now due
 private:
     LocoNetPort& port_;
@@ -215,6 +233,15 @@ private:
     std::vector<PendingLocoNetSend> pending_;
 };
 ```
+
+`TurnoutLocoNetEncoder::encode()` calls `scheduler.sendNow(onPulse)` then
+`scheduler.sendAfter(offPulse, kOffPulseDelayMs)` against the
+`LocoNetSendScheduler&` it's given — tested against
+`FakeLocoNetSendScheduler` in isolation. `PendingLocoNetSendScheduler`'s
+own timing behavior (does `sendAfter` actually wait, does `update()` fire
+at the right moment) is tested separately, wired to the real
+`FakeLocoNetPort` + `FakeClock` — a genuine object under test, not a mock
+standing in for one.
 
 `TurnoutLocoNetEncoder::encode()` calls `scheduler.sendNow(onPulse)` then
 `scheduler.sendAfter(offPulse, kOffPulseDelayMs)`. Tested with the real
@@ -274,7 +301,7 @@ public:
 
 class TurnoutLocoNetEncoder : public LocoNetEncoder {
 public:
-    void encode(const DomainCommand&, PendingLocoNetSendScheduler&) const override;
+    void encode(const DomainCommand&, LocoNetSendScheduler&) const override;
     // sendNow(onPulse); sendAfter(offPulse, kOffPulseDelayMs)
 };
 
@@ -420,10 +447,11 @@ Two-tier, matching the commissioning sub-project's precedent:
   `PendingLocoNetSendScheduler` (with `FakeLocoNetPort`+`FakeClock`),
   `TurnoutLocoNetDecoder` (including the OPC_SW_REP sensor-report-returns-
   nullopt case and `allKnownStates()`), `TurnoutMqttEncoder`,
-  `TurnoutMqttCommandDecoder`, `TurnoutLocoNetEncoder` (with the real
-  scheduler over fakes, asserting the exact on-pulse/off-pulse bytes
-  including the computed checksum). A new `FakeMqttPort` joins
-  `test/support/` alongside the existing fakes.
+  `TurnoutMqttCommandDecoder`, `TurnoutLocoNetEncoder` (against
+  `FakeLocoNetSendScheduler`, asserting the exact on-pulse/off-pulse bytes
+  including the computed checksum). `FakeMqttPort` and
+  `FakeLocoNetSendScheduler` join `test/support/` alongside the existing
+  fakes.
 - **Build-check only** (no native test, `pio run -e esp32dev`):
   `EspWifiPort`, `PicoMqttPort` — genuinely hardware-bound, matching
   `LocoNetEsp32Port`'s existing precedent.
