@@ -13,7 +13,13 @@ void LocoNetMessageRouter::update()
 
 void LocoNetMessageRouter::handleMessage(const LocoNetMessage& message)
 {
-    if (message.bytes().empty())
+    log_.record(message);
+    // OPC_SW_REQ/OPC_SW_REP (and every other opcode this project decodes)
+    // are fixed 4-byte frames. The vendor library validates checksums on
+    // receipt but does not enforce a lower length bound on lnMsgSize (see
+    // CLAUDE.md's note on the long-form-frame length byte), so a short
+    // frame is guarded here, once, rather than in every decoder.
+    if (message.bytes().size() < 4)
     {
         return;
     }

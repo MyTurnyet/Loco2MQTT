@@ -12,6 +12,7 @@ public:
     EspWifiPort(std::string ssid, std::string password);
 
     void update();
+    bool isConnected() const;
 
 private:
     std::string ssid_;

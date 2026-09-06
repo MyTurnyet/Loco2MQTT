@@ -73,6 +73,7 @@ std::optional<TurnoutMqttCommandDecoder> turnoutMqttCommandDecoder;
 std::optional<TurnoutLocoNetEncoder> turnoutLocoNetEncoder;
 std::optional<LocoNetMessageRouter> locoNetMessageRouter;
 std::optional<MqttCommandRouter> mqttCommandRouter;
+bool mqttBegun = false;
 
 namespace
 {
@@ -85,22 +86,30 @@ namespace
         turnoutMqttEncoder.emplace();
         turnoutMqttCommandDecoder.emplace();
         turnoutLocoNetEncoder.emplace();
-        locoNetMessageRouter.emplace(*locoNetPort, *mqttPort, systemClock,
+        // LocoNetMessageRouter owns the sole drain of locoNetPort->receive()
+        // in this mode and records every message to messageLog itself — see
+        // its constructor comment. A separate LocoNetMessageLogger is never
+        // constructed here, so there's no second consumer racing it for the
+        // same destructive-read queue.
+        locoNetMessageRouter.emplace(*locoNetPort, *mqttPort, systemClock, messageLog,
                                       std::vector<std::pair<LocoNetMessageDecoder*, MqttEventEncoder*>>{
                                           {&*turnoutLocoNetDecoder, &*turnoutMqttEncoder}});
         mqttCommandRouter.emplace(*mqttPort, *sendScheduler,
                                    std::vector<std::pair<MqttCommandDecoder*, LocoNetEncoder*>>{
                                        {&*turnoutMqttCommandDecoder, &*turnoutLocoNetEncoder}});
-        mqttPort->begin();
+        // mqttPort->begin() is deferred to loop() until wifiPort reports a
+        // real connection — EspWifiPort::update() doesn't even issue its
+        // first WiFi.begin() until loop() runs, so WiFi is guaranteed not
+        // connected yet at this point in setup().
     }
 
     void setupNormalOrNeedsCommissioning()
     {
         locoNetPort.emplace(kLocoNetRxPin, kLocoNetTxPin);
-        logger.emplace(*locoNetPort, messageLog);
         setupModeTrigger.emplace(bootButton, systemClock, setupModeRequestStore);
         if (bootMode == BootMode::NeedsCommissioning)
         {
+            logger.emplace(*locoNetPort, messageLog);
             commissioningSession.emplace(configStore);
             serialCommissioning.emplace(uartPort, *commissioningSession);
             return;
@@ -138,17 +147,22 @@ void loop()
         return;
     }
     locoNetPort->update();
-    logger->update();
     if (setupModeTrigger->update())
     {
         ESP.restart();
     }
     if (bootMode == BootMode::NeedsCommissioning)
     {
+        logger->update();
         serialCommissioning->update();
         return;
     }
     wifiPort->update();
+    if (!mqttBegun && wifiPort->isConnected())
+    {
+        mqttPort->begin();
+        mqttBegun = true;
+    }
     mqttPort->update();
     sendScheduler->update();
     locoNetMessageRouter->update();

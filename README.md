@@ -196,7 +196,7 @@ Turnout state is bridged bidirectionally:
   flag, so periodic re-publication is the reliability mechanism).
 - **Command subscription** (`loconet/turnout/<address>/set`): the firmware
   listens to these topics and translates MQTT messages containing `"CLOSED"`
-  or `"THROWN"` into LocoNet SL2 turnout commands sent to the bus.
+  or `"THROWN"` into LocoNet `OPC_SW_REQ` turnout commands sent to the bus.
 
 Turnout addresses are passed through unchanged — a command to address 123
 on LocoNet maps to `loconet/turnout/123/state` and
@@ -292,7 +292,12 @@ releases, so a commit pin is the closest thing to a stable version):
 
 - **Turnout is the only device type bridged.** LocoNet sensors, transponders,
   and other device types remain future work. Only turnout state commands
-  (SL2 format) are decoded, published, and subscribed to on MQTT.
+  (`OPC_SW_REQ`/`OPC_SW_REP`) are decoded, published, and subscribed to on
+  MQTT.
+- **The MQTT broker accepts unauthenticated connections.** Anyone who can
+  reach it over WiFi can publish `loconet/turnout/<address>/set` and drive
+  real turnout hardware — deliberate for a home-layout use case (see the
+  design spec), but worth knowing before putting this on a shared network.
 - **The vendor library can itself write past its own 48-byte message
   buffer** on a malformed long-form frame before this adapter's code ever
   runs — this firmware clamps every copy it makes into and out of that

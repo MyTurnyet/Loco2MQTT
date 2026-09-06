@@ -22,4 +22,9 @@ void EspWifiPort::update()
     WiFi.begin(ssid_.c_str(), password_.c_str());
 }
 
+bool EspWifiPort::isConnected() const
+{
+    return WiFi.status() == WL_CONNECTED;
+}
+
 #endif

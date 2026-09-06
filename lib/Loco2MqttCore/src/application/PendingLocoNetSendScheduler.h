@@ -21,5 +21,10 @@ public:
 private:
     LocoNetPort& port_;
     Clock& clock_;
+
+    // Grows by one per accepted MQTT `set` command until its off-pulse
+    // fires ~250ms later. Bounded in practice by PicoMqttPort's own capped,
+    // drop-oldest receive queue (kMaxPendingCommands), which limits how
+    // many commands can reach the scheduler between two drains.
     std::vector<PendingLocoNetSend> pending_;
 };
