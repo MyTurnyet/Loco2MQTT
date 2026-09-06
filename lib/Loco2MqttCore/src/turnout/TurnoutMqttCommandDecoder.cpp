@@ -6,22 +6,20 @@ bool TurnoutMqttCommandDecoder::canDecode(const std::string& deviceTypeSegment) 
     return deviceTypeSegment == "turnout";
 }
 
+bool TurnoutMqttCommandDecoder::isValidAddressShape(const std::string& address)
+{
+    return !address.empty() && address.size() <= 4 &&
+           std::all_of(address.begin(), address.end(), [](char c) { return c >= '0' && c <= '9'; });
+}
+
 std::optional<int> TurnoutMqttCommandDecoder::parseAddress(const std::string& address)
 {
-    if (address.empty() || address.size() > 4)
-    {
-        return std::nullopt;
-    }
-    if (!std::all_of(address.begin(), address.end(), [](char c) { return c >= '0' && c <= '9'; }))
+    if (!isValidAddressShape(address))
     {
         return std::nullopt;
     }
     const int value = std::stoi(address);
-    if (value < 1 || value > 2048)
-    {
-        return std::nullopt;
-    }
-    return value;
+    return (value >= 1 && value <= 2048) ? std::optional<int>(value) : std::nullopt;
 }
 
 std::optional<TurnoutPosition> TurnoutMqttCommandDecoder::parsePosition(const std::string& payload)
@@ -30,11 +28,7 @@ std::optional<TurnoutPosition> TurnoutMqttCommandDecoder::parsePosition(const st
     {
         return TurnoutPosition::Closed;
     }
-    if (payload == "THROWN")
-    {
-        return TurnoutPosition::Thrown;
-    }
-    return std::nullopt;
+    return payload == "THROWN" ? std::optional<TurnoutPosition>(TurnoutPosition::Thrown) : std::nullopt;
 }
 
 std::optional<DomainCommand> TurnoutMqttCommandDecoder::decode(const std::string& address,

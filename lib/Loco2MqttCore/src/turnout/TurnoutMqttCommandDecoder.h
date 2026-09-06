@@ -10,6 +10,7 @@ public:
     std::optional<DomainCommand> decode(const std::string& address, const std::string& payload) const override;
 
 private:
+    static bool isValidAddressShape(const std::string& address);
     static std::optional<int> parseAddress(const std::string& address);
     static std::optional<TurnoutPosition> parsePosition(const std::string& payload);
 };
