@@ -45,7 +45,8 @@ environment without `Arduino.h`.** Hardware-specific code is isolated behind
 ports (interfaces) and only implemented in adapters.
 
 - **Ports** (`lib/Loco2MqttCore/src/ports/`) are pure interfaces the
-  domain/application depend on: `DigitalPin`, `LocoNetPort`, `MessageLog`.
+  domain/application depend on: `DigitalPin`, `LocoNetPort`, `MessageLog`,
+  `ActivityIndicator`.
 - **Adapters** (`lib/Loco2MqttCore/src/adapters/`) implement ports against
   real ESP32/LocoNetESP32HB hardware, guarded with `#ifdef ARDUINO` so they
   don't break the native build. Hand-written test doubles (`test/support/`)
@@ -106,7 +107,12 @@ ports (interfaces) and only implemented in adapters.
   ticked in `BootMode::NeedsCommissioning`, which never builds a router.
   If you ever add a second thing that needs to see LocoNet traffic in
   Normal mode, route it through the existing consumer — don't add a
-  second `receive()` caller.
+  second `receive()` caller. `FlashingMessageLog` is the first example of
+  this: it decorates `MessageLog` so every `record()` call (already made
+  exactly once per received message, by whichever object owns the
+  `receive()` drain in the current boot mode) also flashes the activity
+  LED via `ActivityIndicator`/`ActivityLed`, rather than polling
+  `LocoNetPort` a second time.
 - **Ports never depend on application-layer code.** `LocoNetEncoder`
   (a port) needs to hand off scheduling work, but the concrete
   implementation of that scheduling (`PendingLocoNetSendScheduler`) lives
@@ -132,10 +138,11 @@ ports (interfaces) and only implemented in adapters.
   `MessageLog`, `ConfigStore`, `UartPort`, `DigitalInput`, `Clock`,
   `SetupModeRequestStore`, `RebootTrigger`, `MqttPort`,
   `LocoNetSendScheduler`, `LocoNetMessageDecoder`, `MqttEventEncoder`,
-  `MqttCommandDecoder`, `LocoNetEncoder`
+  `MqttCommandDecoder`, `LocoNetEncoder`, `ActivityIndicator`
 - `lib/Loco2MqttCore/src/application/` — `LocoNetMessageLogger`,
   `CommissioningSession`, `ButtonSetupModeTrigger`,
-  `PendingLocoNetSendScheduler`, `LocoNetMessageRouter`, `MqttCommandRouter`
+  `PendingLocoNetSendScheduler`, `LocoNetMessageRouter`, `MqttCommandRouter`,
+  `ActivityLed`, `FlashingMessageLog`
 - `lib/Loco2MqttCore/src/turnout/` — `TurnoutLocoNetDecoder`,
   `TurnoutMqttEncoder`, `TurnoutMqttCommandDecoder`, `TurnoutLocoNetEncoder`
 - `lib/Loco2MqttCore/src/adapters/` — `EspDigitalPin`, `LocoNetEsp32Port`,
@@ -147,7 +154,7 @@ ports (interfaces) and only implemented in adapters.
 - `test/support/` — `FakeDigitalPin`, `FakeLocoNetPort`, `FakeMessageLog`,
   `FakeConfigStore`, `FakeUartPort`, `FakeDigitalInput`, `FakeClock`,
   `FakeSetupModeRequestStore`, `FakeRebootTrigger`, `FakeMqttPort`,
-  `FakeLocoNetSendScheduler`
+  `FakeLocoNetSendScheduler`, `FakeActivityIndicator`
 - `test/test_<name>/test_main.cpp` — Catch2 test binaries
 
 **Why `native`'s `build_flags` includes `-Ilib/Loco2MqttCore/src`:**

@@ -30,6 +30,8 @@ hardware and independent of any physical LocoNet bus.
   commands sent to the bus.
 - Can transmit a `LocoNetMessage` onto the bus (`LocoNetPort::send()` is
   implemented and hardware-build-checked), driven by the MQTT bridge component.
+- Flashes an onboard/external activity LED for 40ms every time a LocoNet
+  message is received, in every boot mode — see "Activity LED" below.
 
 ## What it doesn't do yet
 
@@ -138,6 +140,8 @@ Everything hardware-specific lives in one of two places:
 |---|---|---|---|
 | RX pin | `src/main.cpp`, `kLocoNetRxPin` | `16` (UART2 RX) | Must be a hardware UART-capable pin — LocoNet's 16.66kbps timing needs the real UART, not a bit-banged read. |
 | TX pin | `src/main.cpp`, `kLocoNetTxPin` | `17` | Any free GPIO (TX is bit-level timed in software), but **must be boot-safe** — see the warning below. |
+| Activity LED pin | `src/main.cpp`, `kActivityLedPin` | `2` | Flashes on every received LocoNet message. GPIO2 is the onboard LED on most ESP32-WROOM-32 DevKit boards; confirm against your specific board, or wire an external LED + resistor to GND on any free GPIO and change this constant. |
+| Activity LED flash duration | `src/main.cpp`, `kActivityFlashDurationMs` | `40` (ms) | How long the LED stays lit per flash. A message arriving before the previous flash ends restarts the window rather than queuing a second pulse. |
 | `InverseLogic` | `lib/Loco2MqttCore/src/adapters/LocoNetEsp32Port.cpp`, `LocoNetEsp32Port`'s constructor | hardcoded `true` | This breadboard circuit's 6N137 opto output is inverted; not a runtime option, since it's a property of the physical circuit, not a config choice. |
 | Serial baud rate | `src/main.cpp`, `kSerialBaudRate` | `115200` | Console/logging baud rate — unrelated to LocoNet's own 16.66kbps bus speed. |
 | Receive queue cap | `lib/Loco2MqttCore/src/adapters/LocoNetEsp32Port.cpp`, `kMaxPendingMessages` | `32` | Bounds worst-case heap growth if messages arrive faster than the main loop drains them; oldest messages are dropped first once full. |
@@ -229,11 +233,13 @@ lib/Loco2MqttCore/src/
 ├── ports/          DigitalPin, LocoNetPort, MessageLog, ConfigStore, UartPort,
 │                   DigitalInput, Clock, SetupModeRequestStore, RebootTrigger,
 │                   MqttPort, LocoNetSendScheduler, LocoNetMessageDecoder,
-│                   MqttEventEncoder, MqttCommandDecoder, LocoNetEncoder
+│                   MqttEventEncoder, MqttCommandDecoder, LocoNetEncoder,
+│                   ActivityIndicator
 │                   — interfaces only
 ├── application/    LocoNetMessageLogger, CommissioningSession,
 │                   ButtonSetupModeTrigger, PendingLocoNetSendScheduler,
-│                   LocoNetMessageRouter, MqttCommandRouter
+│                   LocoNetMessageRouter, MqttCommandRouter, ActivityLed,
+│                   FlashingMessageLog
 │                   — the real application services
 ├── turnout/        TurnoutLocoNetDecoder, TurnoutMqttEncoder,
 │                   TurnoutMqttCommandDecoder, TurnoutLocoNetEncoder
@@ -250,7 +256,8 @@ test/support/       Hand-written fakes (no mocking framework) for native tests:
                      FakeDigitalPin, FakeLocoNetPort, FakeMessageLog,
                      FakeConfigStore, FakeUartPort, FakeDigitalInput,
                      FakeClock, FakeSetupModeRequestStore, FakeRebootTrigger,
-                     FakeMqttPort, FakeLocoNetSendScheduler
+                     FakeMqttPort, FakeLocoNetSendScheduler,
+                     FakeActivityIndicator
 src/main.cpp        Composition root — wires real adapters together; no
                      business logic
 ```
@@ -266,6 +273,18 @@ of `LocoNetPort` and does the same serial logging itself (via the
 described above — two separate objects both draining the same
 LocoNet receive queue would starve one of them, so only one is ever active
 per boot mode.
+
+`ActivityLed` drives a `DigitalPin` high for a fixed window (`update()`,
+ticked from `loop()`, drops it low again once the window elapses) and is the
+one real implementation of the `ActivityIndicator` port. `FlashingMessageLog`
+decorates whichever `MessageLog` a boot mode already constructs, so every
+`record()` call — already made exactly once per received message, by
+whichever object owns the sole `LocoNetPort::receive()` drain for that boot
+mode — also calls `ActivityIndicator::flash()`. This is deliberate: adding a
+second `receive()` consumer just to watch for traffic would race the
+existing one for the same destructive-read queue (see the `LocoNetPort`
+note in "Architecture overview" above), so the LED rides along on the
+logging call that already happens instead.
 
 `CommissioningSession` (driven by `SerialCommissioningAdapter` over the bench
 serial console, or by `WebFormCommissioningAdapter`/`CaptivePortalServer` over

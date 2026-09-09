@@ -4,6 +4,7 @@
 #include "adapters/ArduinoClock.h"
 #include "adapters/CaptivePortalServer.h"
 #include "adapters/EspDigitalInput.h"
+#include "adapters/EspDigitalPin.h"
 #include "adapters/EspMdnsPort.h"
 #include "adapters/EspRebootTrigger.h"
 #include "adapters/EspUartPort.h"
@@ -15,8 +16,10 @@
 #include "adapters/SerialCommissioningAdapter.h"
 #include "adapters/SerialMessageLog.h"
 #include "adapters/WebFormCommissioningAdapter.h"
+#include "application/ActivityLed.h"
 #include "application/ButtonSetupModeTrigger.h"
 #include "application/CommissioningSession.h"
+#include "application/FlashingMessageLog.h"
 #include "application/LocoNetMessageLogger.h"
 #include "application/LocoNetMessageRouter.h"
 #include "application/MqttCommandRouter.h"
@@ -45,6 +48,19 @@ namespace
     // The ESP32's BOOT button, wired active-low with an internal pull-up.
     constexpr int kBootButtonPin = 0;
 
+    // Flashes on every received LocoNet message (see FlashingMessageLog
+    // below). GPIO2 is the onboard LED on most ESP32-WROOM-32 DevKit
+    // boards, including the ELEGOO module this project already targets —
+    // confirm against your specific board before relying on it, same
+    // discipline as kLocoNetTxPin above. If your board has no onboard LED
+    // on GPIO2, wire an external LED + resistor to GND on any other free
+    // GPIO and change this constant.
+    constexpr int kActivityLedPin = 2;
+
+    // Long enough to be visible, short enough not to blur together under
+    // sustained LocoNet traffic (heartbeats alone repeat every ~50ms).
+    constexpr unsigned long kActivityFlashDurationMs = 40;
+
     constexpr unsigned long kSerialBaudRate = 115200;
 
     // No `.local` suffix — the mDNS responder answers under that domain
@@ -62,6 +78,13 @@ EspDigitalInput bootButton(kBootButtonPin);
 EspUartPort uartPort;
 EspRebootTrigger rebootTrigger;
 SerialMessageLog messageLog;
+EspDigitalPin activityLedPin(kActivityLedPin);
+ActivityLed activityLed(activityLedPin, systemClock, kActivityFlashDurationMs);
+// Every boot mode's sole receive() consumer already calls messageLog.record()
+// once per message (see CLAUDE.md's note on the destructive-read queue), so
+// wrapping messageLog here is how the LED reaches every mode without a
+// second LocoNetPort::receive() drain.
+FlashingMessageLog flashingMessageLog(messageLog, activityLed);
 
 std::optional<LocoNetEsp32Port> locoNetPort;
 std::optional<LocoNetMessageLogger> logger;
@@ -100,8 +123,10 @@ namespace
         // in this mode and records every message to messageLog itself — see
         // its constructor comment. A separate LocoNetMessageLogger is never
         // constructed here, so there's no second consumer racing it for the
-        // same destructive-read queue.
-        locoNetMessageRouter.emplace(*locoNetPort, *mqttPort, systemClock, messageLog,
+        // same destructive-read queue. flashingMessageLog is passed instead
+        // of messageLog so the activity LED flashes here too, without a
+        // second receive() consumer.
+        locoNetMessageRouter.emplace(*locoNetPort, *mqttPort, systemClock, flashingMessageLog,
                                       std::vector<std::pair<LocoNetMessageDecoder*, MqttEventEncoder*>>{
                                           {&*turnoutLocoNetDecoder, &*turnoutMqttEncoder}});
         mqttCommandRouter.emplace(*mqttPort, *sendScheduler,
@@ -119,7 +144,7 @@ namespace
         setupModeTrigger.emplace(bootButton, systemClock, setupModeRequestStore);
         if (bootMode == BootMode::NeedsCommissioning)
         {
-            logger.emplace(*locoNetPort, messageLog);
+            logger.emplace(*locoNetPort, flashingMessageLog);
             commissioningSession.emplace(configStore);
             serialCommissioning.emplace(uartPort, *commissioningSession);
             return;
@@ -159,6 +184,7 @@ void loop()
         return;
     }
     locoNetPort->update();
+    activityLed.update();
     if (setupModeTrigger->update())
     {
         ESP.restart();
