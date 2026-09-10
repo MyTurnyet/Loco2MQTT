@@ -9,13 +9,14 @@
 #include "adapters/EspRebootTrigger.h"
 #include "adapters/EspUartPort.h"
 #include "adapters/EspWifiPort.h"
-#include "adapters/LocoNetEsp32Port.h"
+#include "adapters/LocoNetOverTcpPort.h"  // INTERIM — see docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md
 #include "adapters/NvsConfigStore.h"
 #include "adapters/NvsSetupModeRequestStore.h"
 #include "adapters/PicoMqttPort.h"
 #include "adapters/SerialCommissioningAdapter.h"
 #include "adapters/SerialMessageLog.h"
 #include "adapters/WebFormCommissioningAdapter.h"
+#include "adapters/WiFiClientLineStream.h"  // INTERIM — see docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md
 #include "application/ActivityLed.h"
 #include "application/ButtonSetupModeTrigger.h"
 #include "application/CommissioningSession.h"
@@ -43,7 +44,19 @@ namespace
     // reset and pull the shared LocoNet bus low. Verify this against your
     // specific dev board and with a scope through a reset cycle before
     // connecting to a live bus — see README.md "Hardware configuration".
+    // INTERIM: inert on this branch — the electrical interface is swapped
+    // out for kJmriHost/kJmriPort below. Kept, unused, so the revert diff
+    // (see the ADR's "Revert plan") is exactly the lines marked INTERIM.
     constexpr int kLocoNetTxPin = 17;
+
+    // INTERIM (docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md):
+    // JMRI's "Start LocoNet Server" host/port, standing in for the
+    // electrical LocoNet bus while that interface is debugged separately.
+    // Confirmed reachable by netcat spike against Paige's JMRI instance,
+    // 2026-09-10. Update if that machine's address changes; not made
+    // runtime-configurable, per the ADR's deliberately minimal scope.
+    constexpr const char* kJmriHost = "192.168.1.13";
+    constexpr uint16_t kJmriPort = 1234;
 
     // The ESP32's BOOT button, wired active-low with an internal pull-up.
     constexpr int kBootButtonPin = 0;
@@ -86,7 +99,11 @@ ActivityLed activityLed(activityLedPin, systemClock, kActivityFlashDurationMs);
 // second LocoNetPort::receive() drain.
 FlashingMessageLog flashingMessageLog(messageLog, activityLed);
 
-std::optional<LocoNetEsp32Port> locoNetPort;
+// INTERIM — was `std::optional<LocoNetEsp32Port> locoNetPort;`. Revert:
+// swap these two declarations back and drop jmriLineStream (see the ADR's
+// "Revert plan").
+std::optional<WiFiClientLineStream> jmriLineStream;
+std::optional<LocoNetOverTcpPort> locoNetPort;
 std::optional<LocoNetMessageLogger> logger;
 std::optional<ButtonSetupModeTrigger> setupModeTrigger;
 std::optional<CommissioningSession> commissioningSession;
@@ -140,7 +157,9 @@ namespace
 
     void setupNormalOrNeedsCommissioning()
     {
-        locoNetPort.emplace(kLocoNetRxPin, kLocoNetTxPin);
+        // INTERIM — was `locoNetPort.emplace(kLocoNetRxPin, kLocoNetTxPin);`.
+        jmriLineStream.emplace(kJmriHost, kJmriPort);
+        locoNetPort.emplace(*jmriLineStream);
         setupModeTrigger.emplace(bootButton, systemClock, setupModeRequestStore);
         if (bootMode == BootMode::NeedsCommissioning)
         {
