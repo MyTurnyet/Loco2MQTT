@@ -36,7 +36,10 @@ private:
 
     std::string host_;
     uint16_t port_;
-    WiFiClient client_;
+    // mutable: WiFiClient::connected() is non-const in this framework
+    // version despite being a status query, not a logical mutation —
+    // needed to keep isConnected() const per the LineStream contract.
+    mutable WiFiClient client_;
     std::string buffer_;
     unsigned long lastConnectAttemptAtMillis_ = 0;
 
