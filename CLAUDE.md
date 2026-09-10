@@ -165,6 +165,20 @@ triggers that discovery, since the fake isn't itself a recognized library
 dependency — so `ports/X.h` wouldn't resolve without the explicit `-I`. Keep
 this flag when adding new ports.
 
+## Architecture Decision Records
+
+Significant, hard-to-reverse design decisions are recorded as numbered ADRs
+in `docs/decisions/`, filename `NNNN-kebab-case-title.md`, numbered
+sequentially starting at `0001`. This is separate from
+`docs/superpowers/plans`/`docs/superpowers/specs` (which cover a single
+feature's implementation plan) — an ADR captures the *decision and its
+tradeoffs*, and can outlive several plans.
+
+- `0001-interim-jmri-loconet-over-tcp-transport.md` — a second `LocoNetPort`
+  implementation, backed by JMRI's LocoNetOverTcp server over WiFi, used to
+  validate the router/decoder/MQTT-bridge logic against real LocoNet
+  traffic while the electrical breadboard interface is debugged separately.
+
 ## Engineering Principles
 
 - **TDD**: write a failing native test first, implement the minimum to
