@@ -133,7 +133,10 @@ ports (interfaces) and only implemented in adapters.
   `LineAssembler`, `TurnoutAddress`, `TurnoutPosition`,
   `TurnoutStateChanged`, `SetTurnoutPosition`, `DomainEvent`,
   `DomainCommand`, `MqttMessage`, `IncomingMqttMessage`,
-  `PendingLocoNetSend`, `LocoNetChecksum`
+  `PendingLocoNetSend`, `LocoNetChecksum`, `NetworkPortParser`
+  (`parseNetworkPort` is a free function, not a class — shared by
+  `CommandLineParser` and `WebFormCommissioningAdapter` so both
+  commissioning front doors validate a port number identically)
 - `lib/Loco2MqttCore/src/ports/` — `DigitalPin`, `LocoNetPort`,
   `MessageLog`, `ConfigStore`, `UartPort`, `DigitalInput`, `Clock`,
   `SetupModeRequestStore`, `RebootTrigger`, `MqttPort`,

@@ -105,7 +105,7 @@ pio test -e native
 
 This compiles and runs every domain/application/port test against
 hand-written fakes — no ESP32, no LocoNet bus, no serial port required. All
-39 suites should pass. This is the fast feedback loop for any code change;
+40 suites should pass. This is the fast feedback loop for any code change;
 run it before touching real hardware.
 
 ### 2. Build the firmware
@@ -123,9 +123,10 @@ it's a pure build-and-link check.
 On the current interim transport (see "Current status" above), there's no
 hardware to wire yet — instead, start JMRI's "Start LocoNet Server" (from
 JMRI's main window, under Debug or LocoNet Tools depending on version),
-confirm it's listening on port `1234`, and update `kJmriHost`/`kJmriPort`
-in `src/main.cpp` to match your JMRI machine's address (see "Configuration
-reference" below). Once the electrical interface is re-enabled (see the
+confirm it's listening on port `1234`, and commission the device with your
+JMRI machine's address via `set-jmri-host`/`set-jmri-port` (bench-serial)
+or the captive-portal form — see "WiFi commissioning" and "Configuration
+reference" below. Once the electrical interface is re-enabled (see the
 ADR's revert plan), this step becomes wiring
 [`docs/breadboard-build-guide.md`](docs/breadboard-build-guide.md) instead.
 
@@ -159,8 +160,7 @@ Everything hardware-specific lives in one of two places:
 
 | Setting | Where | Value | Why |
 |---|---|---|---|
-| JMRI host | `src/main.cpp`, `kJmriHost` | `"192.168.1.13"` | The interim LocoNet transport (see "Current status" above) — the address of a JMRI instance running "Start LocoNet Server". Update if that machine's address changes; not runtime-configurable, per the ADR's deliberately minimal scope. |
-| JMRI port | `src/main.cpp`, `kJmriPort` | `1234` | JMRI's LocoNetOverTcp server default port. |
+| JMRI host/port | Commissioned, not hardcoded — see "WiFi commissioning" below | none by default | The interim LocoNet transport (see "Current status" above) — the address of a JMRI instance running "Start LocoNet Server". Set via `set-jmri-host`/`set-jmri-port` (bench-serial) or the captive-portal form, same as WiFi credentials; persisted in NVS. A board with WiFi commissioned but no JMRI host/port stays in `NeedsCommissioning` until both are set. |
 | RX pin *(currently inert — see "Current status")* | `src/main.cpp`, `kLocoNetRxPin` | `16` (UART2 RX) | Must be a hardware UART-capable pin — LocoNet's 16.66kbps timing needs the real UART, not a bit-banged read. Unused while the interim JMRI transport is wired in. |
 | TX pin *(currently inert — see "Current status")* | `src/main.cpp`, `kLocoNetTxPin` | `17` | Any free GPIO (TX is bit-level timed in software), but **must be boot-safe** — see the warning below. Unused while the interim JMRI transport is wired in. |
 | Activity LED pin | `src/main.cpp`, `kActivityLedPin` | `2` | Flashes on every received LocoNet message. GPIO2 is the onboard LED on most ESP32-WROOM-32 DevKit boards; confirm against your specific board, or wire an external LED + resistor to GND on any free GPIO and change this constant. |
@@ -193,7 +193,9 @@ available as GPIO at all — pick different pins.
 ## WiFi commissioning
 
 The firmware needs a WiFi SSID and password before it can eventually bring
-up MQTT — this is never hardcoded. There are two ways to set it:
+up MQTT — this is never hardcoded. While the interim JMRI transport is
+wired in (see "Current status" above), it also needs the JMRI host/port to
+connect to — likewise never hardcoded. There are two ways to set either:
 
 **Bench-serial**, over the same USB connection used for `pio device
 monitor` (115200 baud), whenever the device boots with no config saved yet:
@@ -201,18 +203,25 @@ monitor` (115200 baud), whenever the device boots with no config saved yet:
 ```
 set-ssid MyHomeWifi
 set-password hunter2
+set-jmri-host 192.168.1.13
+set-jmri-port 1234
 save
 ```
 
-`show` echoes the current in-progress SSID (never the password). Nothing
-is written to flash until `save`.
+`show` echoes the current in-progress SSID and JMRI host/port (never the
+password). Nothing is written to flash until `save`.
 
 **Wireless setup**, for a board already mounted on the layout: hold the
 BOOT button for 3 seconds. The device reboots into an open WiFi access
 point named `Loco2MQTT-Setup` with no password; connecting to it and
 visiting any URL should open a setup page automatically (a captive
-portal). Submitting the form saves the config and reboots back to normal
-operation.
+portal), with fields for SSID, password, JMRI host, and JMRI port.
+Submitting the form saves the config and reboots back to normal operation.
+
+A board commissioned before the JMRI host/port fields existed needs a
+one-time trip through either path above to add them — until then it stays
+in `NeedsCommissioning` rather than booting to normal operation, the same
+way an incomplete WiFi commissioning already behaved.
 
 ## MQTT turnout bridge
 

@@ -15,7 +15,8 @@ TEST_CASE("set-ssid returns OK and is reflected by a later show")
     std::string reply = session.apply(parseCommandLine("set-ssid MyHomeWifi"));
 
     REQUIRE(reply == "OK");
-    REQUIRE(session.apply(parseCommandLine("show")) == "ssid=MyHomeWifi password=unset");
+    REQUIRE(session.apply(parseCommandLine("show")) ==
+            "ssid=MyHomeWifi password=unset jmri_host= jmri_port=unset");
 }
 
 TEST_CASE("set-password returns OK and show never reveals the password value")
@@ -27,16 +28,41 @@ TEST_CASE("set-password returns OK and show never reveals the password value")
 
     REQUIRE(reply == "OK");
     std::string shown = session.apply(parseCommandLine("show"));
-    REQUIRE(shown == "ssid= password=set");
+    REQUIRE(shown == "ssid= password=set jmri_host= jmri_port=unset");
     REQUIRE(shown.find("hunter2") == std::string::npos);
 }
 
-TEST_CASE("show with nothing set reports an empty ssid and an unset password")
+TEST_CASE("show with nothing set reports an empty ssid, an unset password, and no JMRI host/port")
 {
     FakeConfigStore store;
     CommissioningSession session(store);
 
-    REQUIRE(session.apply(parseCommandLine("show")) == "ssid= password=unset");
+    REQUIRE(session.apply(parseCommandLine("show")) ==
+            "ssid= password=unset jmri_host= jmri_port=unset");
+}
+
+TEST_CASE("set-jmri-host returns OK and is reflected by a later show")
+{
+    FakeConfigStore store;
+    CommissioningSession session(store);
+
+    std::string reply = session.apply(parseCommandLine("set-jmri-host 192.168.1.13"));
+
+    REQUIRE(reply == "OK");
+    REQUIRE(session.apply(parseCommandLine("show")) ==
+            "ssid= password=unset jmri_host=192.168.1.13 jmri_port=unset");
+}
+
+TEST_CASE("set-jmri-port returns OK and is reflected by a later show")
+{
+    FakeConfigStore store;
+    CommissioningSession session(store);
+
+    std::string reply = session.apply(parseCommandLine("set-jmri-port 1234"));
+
+    REQUIRE(reply == "OK");
+    REQUIRE(session.apply(parseCommandLine("show")) ==
+            "ssid= password=unset jmri_host= jmri_port=1234");
 }
 
 TEST_CASE("setting fields does not save until an explicit save command")
@@ -62,6 +88,21 @@ TEST_CASE("save persists the pending config and returns SAVED")
     REQUIRE(reply == "SAVED");
     REQUIRE(store.saveCount() == 1);
     REQUIRE(store.load() == LocoNetAdapterConfig("MyHomeWifi", "hunter2"));
+}
+
+TEST_CASE("save persists JMRI host and port alongside WiFi fields")
+{
+    FakeConfigStore store;
+    CommissioningSession session(store);
+    session.apply(parseCommandLine("set-ssid MyHomeWifi"));
+    session.apply(parseCommandLine("set-password hunter2"));
+    session.apply(parseCommandLine("set-jmri-host 192.168.1.13"));
+    session.apply(parseCommandLine("set-jmri-port 1234"));
+
+    std::string reply = session.apply(parseCommandLine("save"));
+
+    REQUIRE(reply == "SAVED");
+    REQUIRE(store.load() == LocoNetAdapterConfig("MyHomeWifi", "hunter2", "192.168.1.13", 1234));
 }
 
 TEST_CASE("an unknown command reports a generic error and does not save")

@@ -15,6 +15,16 @@ ParsedCommand ParsedCommand::setPassword(const std::string& value)
     return ParsedCommand(CommandType::SetPassword, value);
 }
 
+ParsedCommand ParsedCommand::setJmriHost(const std::string& value)
+{
+    return ParsedCommand(CommandType::SetJmriHost, value);
+}
+
+ParsedCommand ParsedCommand::setJmriPort(const std::string& value)
+{
+    return ParsedCommand(CommandType::SetJmriPort, value);
+}
+
 ParsedCommand ParsedCommand::show()
 {
     return ParsedCommand(CommandType::Show, "");

@@ -34,13 +34,15 @@ void CaptivePortalServer::handleSubmit()
 {
     const std::string ssid = webServer_.arg("ssid").c_str();
     const std::string password = webServer_.arg("password").c_str();
-    if (!formAdapter_.wouldAccept(ssid, password))
+    const std::string jmriHost = webServer_.arg("jmri_host").c_str();
+    const std::string jmriPort = webServer_.arg("jmri_port").c_str();
+    if (!formAdapter_.wouldAccept(ssid, password, jmriHost, jmriPort))
     {
-        webServer_.send(200, "text/html", "Missing SSID or password - not saved.");
+        webServer_.send(200, "text/html", "Missing or invalid fields - not saved.");
         return;
     }
     webServer_.send(200, "text/html", "Saved. Rebooting...");
-    formAdapter_.handleSubmission(ssid, password);
+    formAdapter_.handleSubmission(ssid, password, jmriHost, jmriPort);
 }
 
 #endif

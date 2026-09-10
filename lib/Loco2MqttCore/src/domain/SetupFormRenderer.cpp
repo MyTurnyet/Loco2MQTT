@@ -25,6 +25,11 @@ namespace
         }
         return escaped;
     }
+
+    std::string jmriPortFieldValue(const LocoNetAdapterConfig& config)
+    {
+        return config.jmriPort() == 0 ? "" : std::to_string(config.jmriPort());
+    }
 }
 
 std::string renderSetupForm(const LocoNetAdapterConfig& config)
@@ -34,6 +39,10 @@ std::string renderSetupForm(const LocoNetAdapterConfig& config)
            "<form method=\"POST\" action=\"/\">"
            "SSID: <input name=\"ssid\" value=\"" + escapeHtmlAttribute(config.wifiSsid()) + "\"><br>"
            "Password: <input name=\"password\" type=\"password\" value=\"\"><br>"
+           "JMRI Host: <input name=\"jmri_host\" value=\""
+               + escapeHtmlAttribute(config.jmriHost()) + "\"><br>"
+           "JMRI Port: <input name=\"jmri_port\" type=\"number\" min=\"1\" max=\"65535\" value=\""
+               + jmriPortFieldValue(config) + "\"><br>"
            "<input type=\"submit\" value=\"Save\">"
            "</form></body></html>";
 }

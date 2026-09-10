@@ -5,6 +5,12 @@
 Accepted. Implemented on branch `interim/jmri-transport`; on-hardware
 validation (build order step 6) still pending.
 
+**Partially superseded (2026-09-10):** this ADR's "no persistent JMRI
+connection settings" scope decision no longer holds — see "Addendum
+(2026-09-10)" below for what changed and why. Everything else on this page
+(the transport design itself, the protocol findings, the revert plan) is
+unaffected.
+
 ## Context
 
 Loco2MQTT's electrical LocoNet interface (6N137 opto RX, 2N3904
@@ -192,11 +198,12 @@ In scope: a JMRI-backed `LocoNetPort` implementation, wired in for the
 `esp32dev` build on the interim branch, validated end-to-end against a real
 running JMRI instance and the DR5000.
 
-Out of scope: any persistent configuration UI for the JMRI host/port
+Out of scope: ~~any persistent configuration UI for the JMRI host/port
 (hardcoded constants are fine, matching how `kLocoNetRxPin` etc. are
-handled today); any change to the electrical LocoNet interface work, which
-continues independently; any change to `LocoNetPort` itself, the router, or
-any decoder/encoder.
+handled today)~~ — **superseded, see "Addendum (2026-09-10)" below**; any
+change to the electrical LocoNet interface work, which continues
+independently; any change to `LocoNetPort` itself, the router, or any
+decoder/encoder.
 
 ## Architecture
 
@@ -240,3 +247,49 @@ See "Implementation status" above for what's done against each step.
    `esp32dev`.
 5. Composition root swap on `interim/jmri-transport` — done.
 6. On-hardware validation — pending.
+
+---
+
+## Addendum (2026-09-10): JMRI host/port made runtime-configurable
+
+Supersedes this ADR's original "no persistent JMRI connection settings"
+scope decision (see the struck-through line in "Scope" above and "Scope is
+kept deliberately minimal..." in "Decision").
+
+**What changed:** `LocoNetAdapterConfig` gained two fields — `jmriHost`
+(`std::string`) and `jmriPort` (`uint16_t`) — alongside the existing
+`wifiSsid`/`wifiPassword`. They're commissioned through the same two front
+doors WiFi credentials already use: bench-serial (`set-jmri-host <host>`,
+`set-jmri-port <port>`, both reflected by `show`) and the captive-portal web
+form (`JMRI Host`/`JMRI Port` fields). Both persist through the same
+`ConfigStore`/`NvsConfigStore` the WiFi fields already used — two new NVS
+keys (`jmri_host`, `jmri_port`), no change to the port interface itself.
+`isComplete()` now requires all four fields, so a board commissioned with
+WiFi alone (no JMRI host/port) sits in `BootMode::NeedsCommissioning` until
+both are set, the same way an incomplete WiFi commissioning already
+behaved — this means any board already commissioned before this change
+needs a one-time recommissioning trip to add the JMRI host/port before it
+will boot to `Normal` again. `src/main.cpp` now reads the commissioned
+host/port at boot instead of the `kJmriHost`/`kJmriPort` constants this ADR
+originally scoped for; those constants are removed.
+
+**Why:** the original scope assumed this transport would stay pointed at
+one JMRI instance at one fixed address for its whole (short) interim
+lifetime, so a hardcoded constant was the simplest thing that could work.
+In practice, pointing it at a different JMRI instance — a different bench
+setup, a machine that moved — meant editing `main.cpp` and reflashing,
+which is exactly the friction the WiFi-commissioning mechanism already
+exists to avoid elsewhere in this firmware. The Revert plan's own framing
+of this adapter as a "standing dev/debug tool" worth keeping even after the
+electrical interface works was the signal that it was worth the small
+amount of extra commissioning-surface area now, rather than repeating this
+exercise later.
+
+**What didn't change:** this remains the interim transport, not a
+permanent architectural fixture — the Revert plan above is unaffected by
+this addendum. The new code follows the same discipline as everything else
+in this codebase: TDD, hand-written fakes only, ≤8-line methods. The port
+number validation is its own small pure function (`NetworkPortParser`,
+`domain/NetworkPortParser.h`/`.cpp`), shared by both the bench-serial
+parser and the web form so malformed input is rejected identically at
+either front door — natively tested in `test_network_port_parser`.

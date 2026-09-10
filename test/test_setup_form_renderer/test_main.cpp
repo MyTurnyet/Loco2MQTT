@@ -43,3 +43,34 @@ TEST_CASE("shows the firmware version on the page")
 
     REQUIRE(page.find(kFirmwareVersion) != std::string::npos);
 }
+
+TEST_CASE("renders the current JMRI host and port into the form")
+{
+    LocoNetAdapterConfig config("MyHomeWifi", "hunter2", "192.168.1.13", 1234);
+
+    std::string page = renderSetupForm(config);
+
+    REQUIRE(page.find("value=\"192.168.1.13\"") != std::string::npos);
+    REQUIRE(page.find("value=\"1234\"") != std::string::npos);
+}
+
+TEST_CASE("leaves the JMRI port field blank when unset, rather than showing 0")
+{
+    LocoNetAdapterConfig config("MyHomeWifi", "hunter2");
+
+    std::string page = renderSetupForm(config);
+
+    REQUIRE(page.find("name=\"jmri_port\"") != std::string::npos);
+    REQUIRE(page.find("value=\"0\"") == std::string::npos);
+}
+
+TEST_CASE("escapes special characters in the JMRI host so the HTML stays well-formed")
+{
+    LocoNetAdapterConfig config("MyHomeWifi", "hunter2", "host\"with&chars", 1234);
+
+    std::string page = renderSetupForm(config);
+
+    REQUIRE(page.find("host\"with&chars") == std::string::npos);
+    REQUIRE(page.find("&quot;") != std::string::npos);
+    REQUIRE(page.find("&amp;") != std::string::npos);
+}

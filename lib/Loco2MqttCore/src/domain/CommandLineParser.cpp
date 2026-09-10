@@ -1,5 +1,7 @@
 #include "CommandLineParser.h"
 
+#include "NetworkPortParser.h"
+
 namespace
 {
     std::string verbOf(const std::string& line)
@@ -26,6 +28,15 @@ ParsedCommand parseCommandLine(const std::string& line)
     if (verb == "set-password" && !argument.empty())
     {
         return ParsedCommand::setPassword(argument);
+    }
+    if (verb == "set-jmri-host" && !argument.empty())
+    {
+        return ParsedCommand::setJmriHost(argument);
+    }
+    if (verb == "set-jmri-port")
+    {
+        return parseNetworkPort(argument) ? ParsedCommand::setJmriPort(argument)
+                                           : ParsedCommand::unknown(line);
     }
     if (verb == "show" && argument.empty())
     {

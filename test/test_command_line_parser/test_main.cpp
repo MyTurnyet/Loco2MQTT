@@ -65,3 +65,51 @@ TEST_CASE("show with an unexpected argument is unknown")
     REQUIRE(command.type() == CommandType::Unknown);
     REQUIRE(command.value() == "show extra");
 }
+
+TEST_CASE("parses set-jmri-host with its value")
+{
+    ParsedCommand command = parseCommandLine("set-jmri-host 192.168.1.13");
+
+    REQUIRE(command.type() == CommandType::SetJmriHost);
+    REQUIRE(command.value() == "192.168.1.13");
+}
+
+TEST_CASE("set-jmri-host with no argument is unknown")
+{
+    ParsedCommand command = parseCommandLine("set-jmri-host");
+
+    REQUIRE(command.type() == CommandType::Unknown);
+    REQUIRE(command.value() == "set-jmri-host");
+}
+
+TEST_CASE("parses set-jmri-port with its value")
+{
+    ParsedCommand command = parseCommandLine("set-jmri-port 1234");
+
+    REQUIRE(command.type() == CommandType::SetJmriPort);
+    REQUIRE(command.value() == "1234");
+}
+
+TEST_CASE("set-jmri-port with no argument is unknown")
+{
+    ParsedCommand command = parseCommandLine("set-jmri-port");
+
+    REQUIRE(command.type() == CommandType::Unknown);
+    REQUIRE(command.value() == "set-jmri-port");
+}
+
+TEST_CASE("set-jmri-port with a non-numeric argument is unknown")
+{
+    ParsedCommand command = parseCommandLine("set-jmri-port abc");
+
+    REQUIRE(command.type() == CommandType::Unknown);
+    REQUIRE(command.value() == "set-jmri-port abc");
+}
+
+TEST_CASE("set-jmri-port with an out-of-range argument is unknown")
+{
+    ParsedCommand command = parseCommandLine("set-jmri-port 70000");
+
+    REQUIRE(command.type() == CommandType::Unknown);
+    REQUIRE(command.value() == "set-jmri-port 70000");
+}

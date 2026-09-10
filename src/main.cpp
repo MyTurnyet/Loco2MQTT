@@ -45,18 +45,10 @@ namespace
     // specific dev board and with a scope through a reset cycle before
     // connecting to a live bus — see README.md "Hardware configuration".
     // INTERIM: inert on this branch — the electrical interface is swapped
-    // out for kJmriHost/kJmriPort below. Kept, unused, so the revert diff
-    // (see the ADR's "Revert plan") is exactly the lines marked INTERIM.
+    // out for the commissioned JMRI host/port (see setupNormalOrNeedsCommissioning
+    // below). Kept, unused, so the revert diff (see the ADR's "Revert plan")
+    // is exactly the lines marked INTERIM.
     constexpr int kLocoNetTxPin = 17;
-
-    // INTERIM (docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md):
-    // JMRI's "Start LocoNet Server" host/port, standing in for the
-    // electrical LocoNet bus while that interface is debugged separately.
-    // Confirmed reachable by netcat spike against Paige's JMRI instance,
-    // 2026-09-10. Update if that machine's address changes; not made
-    // runtime-configurable, per the ADR's deliberately minimal scope.
-    constexpr const char* kJmriHost = "192.168.1.13";
-    constexpr uint16_t kJmriPort = 1234;
 
     // The ESP32's BOOT button, wired active-low with an internal pull-up.
     constexpr int kBootButtonPin = 0;
@@ -157,8 +149,13 @@ namespace
 
     void setupNormalOrNeedsCommissioning()
     {
+        const LocoNetAdapterConfig config = configStore.load();
         // INTERIM — was `locoNetPort.emplace(kLocoNetRxPin, kLocoNetTxPin);`.
-        jmriLineStream.emplace(kJmriHost, kJmriPort);
+        // Host/port now come from commissioning (see docs/decisions/0001's
+        // addendum) rather than the hardcoded kJmriHost/kJmriPort constants
+        // this used to read — empty/zero here (nothing commissioned yet)
+        // just means the socket never connects until a technician sets them.
+        jmriLineStream.emplace(config.jmriHost(), config.jmriPort());
         locoNetPort.emplace(*jmriLineStream);
         setupModeTrigger.emplace(bootButton, systemClock, setupModeRequestStore);
         if (bootMode == BootMode::NeedsCommissioning)
@@ -168,7 +165,7 @@ namespace
             serialCommissioning.emplace(uartPort, *commissioningSession);
             return;
         }
-        setupMqttBridge(configStore.load());
+        setupMqttBridge(config);
     }
 
     void setupWirelessSetup()

@@ -16,6 +16,8 @@ public:
 private:
     std::string applySetSsid(const std::string& value);
     std::string applySetPassword(const std::string& value);
+    std::string applySetJmriHost(const std::string& value);
+    std::string applySetJmriPort(const std::string& value);
     std::string applyShow() const;
     std::string applySave();
 
