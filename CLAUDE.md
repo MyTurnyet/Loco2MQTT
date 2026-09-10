@@ -138,7 +138,7 @@ ports (interfaces) and only implemented in adapters.
   `MessageLog`, `ConfigStore`, `UartPort`, `DigitalInput`, `Clock`,
   `SetupModeRequestStore`, `RebootTrigger`, `MqttPort`,
   `LocoNetSendScheduler`, `LocoNetMessageDecoder`, `MqttEventEncoder`,
-  `MqttCommandDecoder`, `LocoNetEncoder`, `ActivityIndicator`
+  `MqttCommandDecoder`, `LocoNetEncoder`, `ActivityIndicator`, `LineStream`
 - `lib/Loco2MqttCore/src/application/` — `LocoNetMessageLogger`,
   `CommissioningSession`, `ButtonSetupModeTrigger`,
   `PendingLocoNetSendScheduler`, `LocoNetMessageRouter`, `MqttCommandRouter`,
@@ -150,11 +150,14 @@ ports (interfaces) and only implemented in adapters.
   `SerialCommissioningAdapter`, `EspDigitalInput`, `ArduinoClock`,
   `NvsSetupModeRequestStore`, `EspRebootTrigger`,
   `WebFormCommissioningAdapter`, `CaptivePortalServer`, `EspWifiPort`,
-  `PicoMqttPort`, `EspMdnsPort`
+  `PicoMqttPort`, `EspMdnsPort`, `LocoNetOverTcpCodec`, `LocoNetOverTcpPort`,
+  `WiFiClientLineStream` (the last three are the interim JMRI transport —
+  see `docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md` —
+  currently wired into `src/main.cpp` in place of `LocoNetEsp32Port`)
 - `test/support/` — `FakeDigitalPin`, `FakeLocoNetPort`, `FakeMessageLog`,
   `FakeConfigStore`, `FakeUartPort`, `FakeDigitalInput`, `FakeClock`,
   `FakeSetupModeRequestStore`, `FakeRebootTrigger`, `FakeMqttPort`,
-  `FakeLocoNetSendScheduler`, `FakeActivityIndicator`
+  `FakeLocoNetSendScheduler`, `FakeActivityIndicator`, `FakeLineStream`
 - `test/test_<name>/test_main.cpp` — Catch2 test binaries
 
 **Why `native`'s `build_flags` includes `-Ilib/Loco2MqttCore/src`:**

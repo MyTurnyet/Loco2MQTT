@@ -2,14 +2,20 @@
 
 Firmware for an ESP32-based LocoNet adapter.
 
-**Current status: Phase 1 with MQTT bridge.** This firmware proves a working
-RX/TX interface to a LocoNet bus, built on a breadboard opto/transistor
-interface (see [`docs/breadboard-build-guide.md`](docs/breadboard-build-guide.md)),
-connects to WiFi using stored commissioning credentials, runs an on-device
-MQTT broker (PicoMQTT), and bridges turnout state bidirectionally — sending
-LocoNet turnout changes to MQTT and accepting MQTT commands to drive LocoNet
-turnout operations. MQTT bridging for sensor, transponder, and other device
-types remains future work.
+**Current status: Phase 1 with MQTT bridge, on an interim transport.** This
+firmware connects to WiFi using stored commissioning credentials, runs an
+on-device MQTT broker (PicoMQTT), and bridges turnout state bidirectionally
+— sending LocoNet turnout changes to MQTT and accepting MQTT commands to
+drive LocoNet turnout operations. MQTT bridging for sensor, transponder,
+and other device types remains future work.
+
+**The electrical LocoNet interface is temporarily swapped out.** The
+breadboard opto/transistor interface (see
+[`docs/breadboard-build-guide.md`](docs/breadboard-build-guide.md)) is not
+yet reading reliably, so `src/main.cpp` currently talks to LocoNet over
+WiFi via JMRI's LocoNetOverTcp server instead of the RX/TX pins — see
+[`docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md`](docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md)
+for why, and the revert plan once the electrical interface is working.
 
 Built with Test-Driven Development and Hexagonal Architecture — domain and
 application logic is tested natively on a desktop, independent of the ESP32
@@ -17,10 +23,15 @@ hardware and independent of any physical LocoNet bus.
 
 ## What it does today
 
-- Receives LocoNet messages over a breadboard-built RX interface and validates
-  every frame against the vendor library's own collision/checksum/incomplete-frame
-  flags before processing it, so bus noise or wiring mistakes don't masquerade
-  as real traffic.
+- Receives LocoNet messages relayed over WiFi from JMRI's LocoNetOverTcp
+  server (the interim transport — see "Current status" above), and
+  transparently ignores JMRI's own non-data protocol lines (`VERSION`,
+  `SENT OK`/`SENT ERROR`).
+- Can still receive over a breadboard-built RX interface via
+  `LocoNetEsp32Port`, which validates every frame against the vendor
+  library's own collision/checksum/incomplete-frame flags before
+  processing it — this code path is not currently wired into
+  `src/main.cpp` (see "Current status" above).
 - Connects to WiFi using stored commissioning credentials (see "WiFi
   commissioning" below).
 - Runs PicoMQTT as an on-device broker and publishes/subscribes to turnout
@@ -37,16 +48,24 @@ hardware and independent of any physical LocoNet bus.
 
 - No MQTT bridging for sensors, transponders, or other device types beyond
   turnout — see "Known limitations" below.
-- No JMRI integration beyond what a raw LocoNet tap gives you for free
-  (direct LocoNet message observation).
-- No PCB — this runs on a breadboard interface only (a PCB phase is noted
-  as future work in the build guide).
+- No PCB — the electrical interface, once re-enabled, runs on a breadboard
+  interface only (a PCB phase is noted as future work in the build guide).
 
 ## Hardware requirements
+
+On the current interim transport (see "Current status" above), this
+firmware needs:
 
 - An ESP32 dev board. This project has been built and tested against an
   ELEGOO ESP-WROOM-32 module; other ESP32 boards should work but haven't
   been verified.
+- A running JMRI instance with "Start LocoNet Server" enabled (the
+  LocoNetOverTcp feature, default port `1234`), reachable over WiFi from
+  the ESP32, connected to a real LocoNet bus (e.g. a Digitrax DR5000).
+
+The breadboard electrical interface is not required to run today's
+firmware, but is still the eventual target:
+
 - The breadboard opto/transistor interface described in
   [`docs/breadboard-build-guide.md`](docs/breadboard-build-guide.md) — a
   6N137 optocoupler RX stage, a 2N3904 open-collector TX driver, and an RJ12
@@ -86,7 +105,7 @@ pio test -e native
 
 This compiles and runs every domain/application/port test against
 hand-written fakes — no ESP32, no LocoNet bus, no serial port required. All
-33 suites should pass. This is the fast feedback loop for any code change;
+39 suites should pass. This is the fast feedback loop for any code change;
 run it before touching real hardware.
 
 ### 2. Build the firmware
@@ -99,13 +118,16 @@ This compiles the real firmware against the ESP32/Arduino toolchain and the
 vendor LocoNet library. It does **not** require a board to be plugged in —
 it's a pure build-and-link check.
 
-### 3. Wire the hardware
+### 3. Point it at JMRI
 
-Follow [`docs/breadboard-build-guide.md`](docs/breadboard-build-guide.md)
-from the top. It's written to be built and bench-verified in stages (RX
-alone, then TX alone, then the full loop) rather than all at once — don't
-skip the intermediate multimeter checks even if you're confident, since a
-wiring mistake here can affect other devices on a shared LocoNet bus.
+On the current interim transport (see "Current status" above), there's no
+hardware to wire yet — instead, start JMRI's "Start LocoNet Server" (from
+JMRI's main window, under Debug or LocoNet Tools depending on version),
+confirm it's listening on port `1234`, and update `kJmriHost`/`kJmriPort`
+in `src/main.cpp` to match your JMRI machine's address (see "Configuration
+reference" below). Once the electrical interface is re-enabled (see the
+ADR's revert plan), this step becomes wiring
+[`docs/breadboard-build-guide.md`](docs/breadboard-build-guide.md) instead.
 
 ### 4. Flash it
 
@@ -119,12 +141,11 @@ pio run -e esp32dev --target upload
 pio device monitor
 ```
 
-(115200 baud.) Connect the adapter's RJ12 to an open LocoNet port. You
-should immediately see hex-formatted lines for bus traffic — heartbeats,
-throttle activity, anything else already on the bus. If you send a message
-from another LocoNet device (or via JMRI), it should appear as a new line.
-Seeing plausible-looking hex here confirms wiring and `InverseLogic` are
-correct — see Troubleshooting if you see nothing, or garbage.
+(115200 baud.) With JMRI's LocoNet server running and the ESP32 on the same
+WiFi network, you should see hex-formatted lines for bus traffic —
+heartbeats, throttle activity, anything else already on the bus, relayed
+through JMRI. If you send a message from another LocoNet device, it should
+appear as a new line. See Troubleshooting if you see nothing, or garbage.
 
 To run a single native test file instead of the whole suite:
 
@@ -138,8 +159,10 @@ Everything hardware-specific lives in one of two places:
 
 | Setting | Where | Value | Why |
 |---|---|---|---|
-| RX pin | `src/main.cpp`, `kLocoNetRxPin` | `16` (UART2 RX) | Must be a hardware UART-capable pin — LocoNet's 16.66kbps timing needs the real UART, not a bit-banged read. |
-| TX pin | `src/main.cpp`, `kLocoNetTxPin` | `17` | Any free GPIO (TX is bit-level timed in software), but **must be boot-safe** — see the warning below. |
+| JMRI host | `src/main.cpp`, `kJmriHost` | `"192.168.1.13"` | The interim LocoNet transport (see "Current status" above) — the address of a JMRI instance running "Start LocoNet Server". Update if that machine's address changes; not runtime-configurable, per the ADR's deliberately minimal scope. |
+| JMRI port | `src/main.cpp`, `kJmriPort` | `1234` | JMRI's LocoNetOverTcp server default port. |
+| RX pin *(currently inert — see "Current status")* | `src/main.cpp`, `kLocoNetRxPin` | `16` (UART2 RX) | Must be a hardware UART-capable pin — LocoNet's 16.66kbps timing needs the real UART, not a bit-banged read. Unused while the interim JMRI transport is wired in. |
+| TX pin *(currently inert — see "Current status")* | `src/main.cpp`, `kLocoNetTxPin` | `17` | Any free GPIO (TX is bit-level timed in software), but **must be boot-safe** — see the warning below. Unused while the interim JMRI transport is wired in. |
 | Activity LED pin | `src/main.cpp`, `kActivityLedPin` | `2` | Flashes on every received LocoNet message. GPIO2 is the onboard LED on most ESP32-WROOM-32 DevKit boards; confirm against your specific board, or wire an external LED + resistor to GND on any free GPIO and change this constant. |
 | Activity LED flash duration | `src/main.cpp`, `kActivityFlashDurationMs` | `40` (ms) | How long the LED stays lit per flash. A message arriving before the previous flash ends restarts the window rather than queuing a second pulse. |
 | `InverseLogic` | `lib/Loco2MqttCore/src/adapters/LocoNetEsp32Port.cpp`, `LocoNetEsp32Port`'s constructor | hardcoded `true` | This breadboard circuit's 6N137 opto output is inverted; not a runtime option, since it's a property of the physical circuit, not a config choice. |
@@ -234,7 +257,7 @@ lib/Loco2MqttCore/src/
 │                   DigitalInput, Clock, SetupModeRequestStore, RebootTrigger,
 │                   MqttPort, LocoNetSendScheduler, LocoNetMessageDecoder,
 │                   MqttEventEncoder, MqttCommandDecoder, LocoNetEncoder,
-│                   ActivityIndicator
+│                   ActivityIndicator, LineStream
 │                   — interfaces only
 ├── application/    LocoNetMessageLogger, CommissioningSession,
 │                   ButtonSetupModeTrigger, PendingLocoNetSendScheduler,
@@ -249,15 +272,17 @@ lib/Loco2MqttCore/src/
                      EspDigitalInput, ArduinoClock, NvsSetupModeRequestStore,
                      EspRebootTrigger, WebFormCommissioningAdapter,
                      CaptivePortalServer, EspWifiPort, PicoMqttPort,
-                     EspMdnsPort
+                     EspMdnsPort, LocoNetOverTcpCodec, LocoNetOverTcpPort,
+                     WiFiClientLineStream
                      (#ifdef ARDUINO — the only files that touch real hardware
-                     or the vendor library)
+                     or the vendor library, except LocoNetOverTcpCodec/Port
+                     which are natively tested — see "Current status" above)
 test/support/       Hand-written fakes (no mocking framework) for native tests:
                      FakeDigitalPin, FakeLocoNetPort, FakeMessageLog,
                      FakeConfigStore, FakeUartPort, FakeDigitalInput,
                      FakeClock, FakeSetupModeRequestStore, FakeRebootTrigger,
                      FakeMqttPort, FakeLocoNetSendScheduler,
-                     FakeActivityIndicator
+                     FakeActivityIndicator, FakeLineStream
 src/main.cpp        Composition root — wires real adapters together; no
                      business logic
 ```
@@ -309,6 +334,12 @@ design decision, are at
 [`docs/superpowers/plans/2026-09-06-mqtt-turnout-bridge.md`](docs/superpowers/plans/2026-09-06-mqtt-turnout-bridge.md)
 (the MQTT turnout bridge).
 
+Architecture Decision Records live in `docs/decisions/`, numbered
+sequentially — see
+[`docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md`](docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md)
+for the interim JMRI transport described in "Current status" above,
+including its revert plan.
+
 ### Third-party dependencies
 
 Pinned to specific commits in `platformio.ini` (both repos lack tagged
@@ -332,6 +363,10 @@ releases, so a commit pin is the closest thing to a stable version):
   reach it over WiFi can publish `loconet/turnout/<address>/set` and drive
   real turnout hardware — deliberate for a home-layout use case (see the
   design spec), but worth knowing before putting this on a shared network.
+- **The current transport depends on a running, reachable JMRI instance.**
+  This is temporary (see "Current status" above and the ADR's revert
+  plan) — the electrical LocoNet interface doesn't need JMRI at all, but
+  isn't wired into `src/main.cpp` right now.
 - **The vendor library can itself write past its own 48-byte message
   buffer** on a malformed long-form frame before this adapter's code ever
   runs — this firmware clamps every copy it makes into and out of that
