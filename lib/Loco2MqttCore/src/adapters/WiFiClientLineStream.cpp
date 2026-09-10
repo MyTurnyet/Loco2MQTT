@@ -13,7 +13,7 @@ std::optional<std::string> WiFiClientLineStream::readLine()
     reconnectIfDue();
     while (client_.available() > 0)
     {
-        auto line = finishLineIfComplete(static_cast<char>(client_.read()));
+        auto line = assembler_.feed(static_cast<char>(client_.read()));
         if (line.has_value())
         {
             return line;
@@ -50,21 +50,6 @@ void WiFiClientLineStream::reconnectIfDue()
     }
     lastConnectAttemptAtMillis_ = millis();
     client_.connect(host_.c_str(), port_);
-}
-
-std::optional<std::string> WiFiClientLineStream::finishLineIfComplete(char c)
-{
-    if (c != '\r')
-    {
-        if (buffer_.size() < kMaxBufferedBytes)
-        {
-            buffer_ += c;
-        }
-        return std::nullopt;
-    }
-    std::string line = std::move(buffer_);
-    buffer_.clear();
-    return line;
 }
 
 #endif

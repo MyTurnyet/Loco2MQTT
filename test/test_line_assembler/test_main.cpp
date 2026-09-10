@@ -50,3 +50,22 @@ TEST_CASE("bytes beyond maxBufferedBytes are dropped, not appended")
 
     REQUIRE(assembler.feed('\n') == std::optional<std::string>("abc"));
 }
+
+TEST_CASE("a custom terminator completes the line")
+{
+    LineAssembler assembler(256, '\r');
+    assembler.feed('h');
+    assembler.feed('i');
+
+    REQUIRE(assembler.feed('\r') == std::optional<std::string>("hi"));
+}
+
+TEST_CASE("a custom terminator does not strip a trailing carriage return")
+{
+    LineAssembler assembler(256, '\r');
+    assembler.feed('h');
+    assembler.feed('i');
+    assembler.feed('\r');
+
+    REQUIRE(assembler.feed('\n') == std::nullopt);
+}

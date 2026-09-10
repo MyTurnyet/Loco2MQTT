@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 
+#include "domain/LineAssembler.h"
 #include "ports/LineStream.h"
 
 // LineStream backed by a WiFiClient TCP socket to JMRI's "Start LocoNet
@@ -16,11 +17,8 @@
 //
 // Frames lines on a bare '\r' — confirmed empirically against a real JMRI
 // 5.2 session (see docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md),
-// which sends neither '\n' nor '\r\n'. This is its own small loop rather
-// than a reuse of LineAssembler, which only recognizes '\n' as a
-// terminator and is shared with the USB-serial commissioning path — a
-// deliberate choice to avoid touching that already-tested, already-shipped
-// class for a one-off protocol quirk.
+// which sends neither '\n' nor '\r\n'. Uses LineAssembler with '\r' as the
+// terminator, same pattern as EspUartPort.
 class WiFiClientLineStream final : public LineStream
 {
 public:
@@ -32,7 +30,6 @@ public:
 
 private:
     void reconnectIfDue();
-    std::optional<std::string> finishLineIfComplete(char c);
 
     std::string host_;
     uint16_t port_;
@@ -40,12 +37,13 @@ private:
     // version despite being a status query, not a logical mutation —
     // needed to keep isConnected() const per the LineStream contract.
     mutable WiFiClient client_;
-    std::string buffer_;
     unsigned long lastConnectAttemptAtMillis_ = 0;
 
-    // Mirrors EspUartPort's kMaxBufferedBytes: bounds worst-case heap
-    // growth if JMRI is ever silent for a very long "line" with no '\r'.
+    // Bounds worst-case heap growth if JMRI is ever silent for a very
+    // long "line" with no '\r'. Mirrors EspUartPort's kMaxBufferedBytes.
     static constexpr std::size_t kMaxBufferedBytes = 256;
+
+    LineAssembler assembler_{kMaxBufferedBytes, '\r'};
 
     // Mirrors EspWifiPort's retry cadence for the same reason: avoid
     // hammering connect() every single loop() tick while JMRI is down.

@@ -7,7 +7,7 @@
 class LineAssembler
 {
 public:
-    explicit LineAssembler(std::size_t maxBufferedBytes);
+    explicit LineAssembler(std::size_t maxBufferedBytes, char terminator = '\n');
 
     std::optional<std::string> feed(char c);
 
@@ -16,4 +16,5 @@ private:
 
     std::string buffer_;
     std::size_t maxBufferedBytes_;
+    char terminator_;
 };
