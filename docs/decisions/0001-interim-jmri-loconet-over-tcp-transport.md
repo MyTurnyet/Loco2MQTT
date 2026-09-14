@@ -293,3 +293,34 @@ number validation is its own small pure function (`NetworkPortParser`,
 `domain/NetworkPortParser.h`/`.cpp`), shared by both the bench-serial
 parser and the web form so malformed input is rejected identically at
 either front door — natively tested in `test_network_port_parser`.
+
+## Addendum (2026-09-14): line terminator was actually '\r\n', not bare '\r'
+
+Corrects this ADR's "Protocol findings" section and `WiFiClientLineStream`'s
+original implementation, both of which concluded JMRI sends lines
+terminated with a bare `\r` — "no `\n`, not even `\r\n`" — based on the
+2026-09-10 netcat spike.
+
+**What was actually wrong:** on-hardware testing (2026-09-14) showed JMRI
+does send a trailing `\n` after every `\r`. `WiFiClientLineStream` framed
+lines on `\r` alone, so that `\n` was never consumed as part of the
+terminator — it became the leading character of the *next* buffered line
+instead. That corrupted line then failed `LocoNetOverTcpCodec::decodeLine()`'s
+exact `"RECEIVE "` prefix match and was silently treated as a skippable
+non-data line, identical to how `VERSION`/`SENT OK` lines are skipped. The
+practical effect: no real `RECEIVE` line ever successfully decoded on real
+hardware, while the write path (`SEND`) and the connection itself were both
+completely healthy — nothing pointed at line framing until raw byte-level
+serial logging of every character read made the leading `\n` visible.
+
+**Fix:** `WiFiClientLineStream` now uses `LineAssembler`'s default `'\n'`
+terminator instead of `'\r'`, relying on `LineAssembler::finishLine()`'s
+existing trailing-`\r`-strip logic — the same mechanism `EspUartPort`
+already used correctly. The claim in this ADR that the original `'\r'`
+choice matched "the same pattern as EspUartPort" was itself incorrect;
+`EspUartPort` was never configured with `'\r'`.
+
+**Why the original spike missed this:** unconfirmed — most likely the `\n`
+was present in the captured bytes but not distinguished from `\r` when read
+back, since the earlier finding was recorded from `repr()`-style output
+rather than a byte-by-byte hex trace.

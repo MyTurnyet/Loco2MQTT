@@ -15,10 +15,12 @@
 // Server" (LocoNetOverTcp). Thin, Arduino-guarded, build-check only — same
 // tier as LocoNetEsp32Port/EspUartPort, not natively tested.
 //
-// Frames lines on a bare '\r' — confirmed empirically against a real JMRI
-// 5.2 session (see docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md),
-// which sends neither '\n' nor '\r\n'. Uses LineAssembler with '\r' as the
-// terminator, same pattern as EspUartPort.
+// Frames lines on '\n', stripping a trailing '\r' — JMRI actually sends
+// '\r\n', not the bare '\r' originally assumed (see the "Addendum" in
+// docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md for the
+// correction). Uses LineAssembler's default '\n' terminator, the same
+// pattern EspUartPort already uses — the earlier claim that this matched
+// EspUartPort was itself wrong; EspUartPort was never on '\r'.
 class WiFiClientLineStream final : public LineStream
 {
 public:
