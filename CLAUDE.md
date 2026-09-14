@@ -145,9 +145,12 @@ ports (interfaces) and only implemented in adapters.
 - `lib/Loco2MqttCore/src/application/` — `LocoNetMessageLogger`,
   `CommissioningSession`, `ButtonSetupModeTrigger`,
   `PendingLocoNetSendScheduler`, `LocoNetMessageRouter`, `MqttCommandRouter`,
-  `ActivityLed`, `FlashingMessageLog`
+  `ActivityLed`, `FlashingMessageLog`, `JmriConnectionStatusPublisher`,
+  `TurnoutTableStartupQuery` (interim — ties to `LineStream`, see its own
+  header comment and ADR 0001's 2026-09-14 addendum)
 - `lib/Loco2MqttCore/src/turnout/` — `TurnoutLocoNetDecoder`,
-  `TurnoutMqttEncoder`, `TurnoutMqttCommandDecoder`, `TurnoutLocoNetEncoder`
+  `TurnoutMqttEncoder`, `TurnoutMqttCommandDecoder`, `TurnoutLocoNetEncoder`,
+  `TurnoutStateRequestEncoder`
 - `lib/Loco2MqttCore/src/adapters/` — `EspDigitalPin`, `LocoNetEsp32Port`,
   `SerialMessageLog`, `NvsConfigStore`, `EspUartPort`,
   `SerialCommissioningAdapter`, `EspDigitalInput`, `ArduinoClock`,

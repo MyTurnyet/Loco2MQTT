@@ -236,6 +236,12 @@ Turnout state is bridged bidirectionally:
   ensuring late subscribers receive the current state even if they missed the
   original command (PicoMQTT's broker mode does not honor the MQTT retained
   flag, so periodic re-publication is the reliability mechanism).
+- **Startup table query:** every time the device (re)connects, it asks the
+  command station for the current state of every turnout address 1-48
+  (`OPC_SW_STATE`), so MQTT reflects real layout state within seconds of
+  coming online rather than waiting for each turnout to happen to change.
+  Replies come back as ordinary `OPC_SW_REP` traffic through the same state
+  publication path above.
 - **Command subscription** (`loconet/turnout/<address>/set`): the firmware
   listens to these topics and translates MQTT messages containing `"CLOSED"`
   or `"THROWN"` into LocoNet `OPC_SW_REQ` turnout commands sent to the bus.

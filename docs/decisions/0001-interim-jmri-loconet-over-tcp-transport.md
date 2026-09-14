@@ -324,3 +324,39 @@ choice matched "the same pattern as EspUartPort" was itself incorrect;
 was present in the captured bytes but not distinguished from `\r` when read
 back, since the earlier finding was recorded from `repr()`-style output
 rather than a byte-by-byte hex trace.
+
+## Addendum (2026-09-14): startup turnout-table query added, ties to this transport's LineStream
+
+`TurnoutTableStartupQuery` (`application/`) now watches this transport's
+`LineStream::isConnected()` for a not-connected-to-connected transition —
+same signal `JmriConnectionStatusPublisher` already watches — and, on
+every such transition, walks a fixed address range (1-48, a constant for
+now) sending one `OPC_SW_STATE` request per address via the existing
+`LocoNetSendScheduler`, staggered 20ms apart. Replies arrive as ordinary
+`OPC_SW_REP` traffic and are handled entirely by the existing
+`LocoNetMessageRouter` -> `TurnoutLocoNetDecoder` -> `TurnoutMqttEncoder`
+pipeline — no decoder changes were needed. `TurnoutStateRequestEncoder`
+(`turnout/`), the one new wire-format piece, is untouched by transport
+choice — it just builds an `OPC_SW_STATE` message for an address, the same
+way regardless of which `LocoNetPort` is wired in.
+
+Considered and rejected: sourcing the address list from JMRI's own turnout
+roster (its separate JSON Server feature, a different port from this
+transport's raw LocoNet feed) instead of a local constant. Bringing JMRI's
+object model into a "which turnouts exist" decision would work today but
+contradicts this project's standalone-device goal and would need
+replacing, not just reverting, once this transport is gone — a permanent
+dependency masquerading as an interim one. Kept LocoNet-only instead: the
+address range is the only piece of this feature that isn't already
+interim-transport-agnostic.
+
+**What this means for the eventual revert:** unlike the rest of this ADR's
+scope, `TurnoutTableStartupQuery`'s *trigger* (not its wire format) is
+genuinely coupled to `LineStream`, which `LocoNetEsp32Port` has no
+equivalent of — real hardware has no software-observable "just connected"
+moment. Reverting to `LocoNetEsp32Port` will need this trigger rethought
+(most likely: fire once, unconditionally, right after `setupMqttBridge()`
+runs) rather than a clean line-for-line revert like the rest of this ADR's
+`INTERIM`-marked lines. Deliberately not solved now, per this ADR's own
+"no runtime-configurable transport selection" scope discipline — flagged
+here so it isn't a surprise later.
