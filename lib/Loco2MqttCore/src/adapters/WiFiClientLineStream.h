@@ -30,6 +30,7 @@ public:
 
 private:
     void reconnectIfDue();
+    bool isReconnectDue() const;
 
     std::string host_;
     uint16_t port_;

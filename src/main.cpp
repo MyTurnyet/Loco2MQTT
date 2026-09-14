@@ -10,6 +10,7 @@
 #include "adapters/EspUartPort.h"
 #include "adapters/EspWifiPort.h"
 #include "adapters/LocoNetOverTcpPort.h"  // INTERIM — see docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md
+#include "application/JmriConnectionStatusPublisher.h"
 #include "adapters/NvsConfigStore.h"
 #include "adapters/NvsSetupModeRequestStore.h"
 #include "adapters/PicoMqttPort.h"
@@ -95,6 +96,7 @@ FlashingMessageLog flashingMessageLog(messageLog, activityLed);
 // swap these two declarations back and drop jmriLineStream (see the ADR's
 // "Revert plan").
 std::optional<WiFiClientLineStream> jmriLineStream;
+std::optional<JmriConnectionStatusPublisher> jmriConnectionStatusPublisher;
 std::optional<LocoNetOverTcpPort> locoNetPort;
 std::optional<LocoNetMessageLogger> logger;
 std::optional<ButtonSetupModeTrigger> setupModeTrigger;
@@ -123,6 +125,7 @@ namespace
         wifiPort.emplace(config.wifiSsid(), config.wifiPassword());
         mqttPort.emplace();
         mdnsPort.emplace();
+        jmriConnectionStatusPublisher.emplace(*jmriLineStream, *mqttPort, systemClock);
         sendScheduler.emplace(*locoNetPort, systemClock);
         turnoutLocoNetDecoder.emplace();
         turnoutMqttEncoder.emplace();
@@ -227,5 +230,6 @@ void loop()
     mqttPort->update();
     sendScheduler->update();
     locoNetMessageRouter->update();
+    jmriConnectionStatusPublisher->update();
     mqttCommandRouter->update();
 }
