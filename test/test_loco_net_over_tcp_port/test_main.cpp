@@ -47,10 +47,10 @@ TEST_CASE("receive() transparently skips several non-data lines ahead of a real 
     FakeLineStream stream;
     stream.enqueueLine("VERSION JMRI Server 5.2+R760b98537f");
     stream.enqueueLine("SENT OK");
-    stream.enqueueLine("RECEIVE E7 0E 01 33");
+    stream.enqueueLine("RECEIVE BB 01 00 45");
     LocoNetOverTcpPort port(stream);
 
-    REQUIRE(port.receive() == LocoNetMessage({0xE7, 0x0E, 0x01, 0x33}));
+    REQUIRE(port.receive() == LocoNetMessage({0xBB, 0x01, 0x00, 0x45}));
 }
 
 TEST_CASE("receive() returns nullopt once only non-data lines remain")

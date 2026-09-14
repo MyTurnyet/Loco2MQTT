@@ -4,6 +4,8 @@
 #include <sstream>
 #include <vector>
 
+#include "domain/LocoNetChecksum.h"
+
 namespace
 {
     const std::string kReceivePrefix = "RECEIVE ";
@@ -29,6 +31,19 @@ namespace
         }
         return bytes.empty() ? std::nullopt : std::make_optional(bytes);
     }
+
+    // The real-hardware LocoNetPort trusts the vendor library to have
+    // already validated checksums (see CLAUDE.md); this interim transport
+    // has no equivalent upstream guarantee, so it checks its own.
+    bool hasValidChecksum(const std::vector<uint8_t>& bytes)
+    {
+        if (bytes.size() < 2)
+        {
+            return false;
+        }
+        std::vector<uint8_t> bytesBeforeChecksum(bytes.begin(), bytes.end() - 1);
+        return computeLocoNetChecksum(bytesBeforeChecksum) == bytes.back();
+    }
 }
 
 std::string LocoNetOverTcpCodec::encodeSend(const LocoNetMessage& message) const
@@ -43,5 +58,9 @@ std::optional<LocoNetMessage> LocoNetOverTcpCodec::decodeLine(const std::string&
         return std::nullopt;
     }
     auto bytes = parseHexBytes(line.substr(kReceivePrefix.size()));
-    return bytes.has_value() ? std::optional(LocoNetMessage(*bytes)) : std::nullopt;
+    if (!bytes.has_value() || !hasValidChecksum(*bytes))
+    {
+        return std::nullopt;
+    }
+    return LocoNetMessage(*bytes);
 }

@@ -446,3 +446,38 @@ a real reconnect, and any `false` reading during that window resets the
 wait rather than counting toward it. During sustained flapping that never
 stays connected for the full window, the query now never fires at all,
 rather than firing on every blip.
+
+## Addendum (2026-09-14): decodeLine() now validates the LocoNet checksum
+
+Prompted by Paige reporting two turnouts (1019, 1020) with no matching
+physical hardware persistently reporting `THROWN`, republished every 30s
+by `LocoNetMessageRouter`'s reliability backstop once decoded once and
+latched into `TurnoutLocoNetDecoder`'s state map (`allKnownStates()`).
+
+`LocoNetOverTcpCodec::decodeLine()` parsed hex tokens off a `RECEIVE`
+line and trusted them outright -- unlike the real-hardware `LocoNetPort`
+path, where the vendor library validates checksums before a message ever
+reaches this codebase (see `CLAUDE.md`). This interim transport had no
+equivalent check of its own, so any malformed or spliced `RECEIVE` line
+-- plausible during the very `WiFiClientLineStream` reconnect churn the
+debounce addendum above describes, since `WiFiClientLineStream`'s own
+`\r`-terminated buffering loop isn't hardened against a stream reset
+mid-line -- would be decoded and published as if it were real bus
+traffic.
+
+**Fix:** `decodeLine()` now rejects any `RECEIVE` line whose last byte
+doesn't match `computeLocoNetChecksum()` over the bytes before it (also
+rejects anything shorter than opcode+checksum). TDD'd in
+`test_loco_net_over_tcp_codec` against both a deliberately-wrong checksum
+byte and a too-short line; one pre-existing fixture in
+`test_loco_net_over_tcp_port` (`RECEIVE E7 0E 01 33`, an arbitrary
+truncation of a longer real capture used only to test line-skipping, not
+an actual valid frame) had to be swapped for a real valid message once
+checksum validation started rejecting it.
+
+**Not fully confirmed as root cause:** this closes a real integrity gap
+regardless, but whether corrupted framing actually explains the 1019/1020
+readings specifically -- versus, say, a genuine but unexpected device on
+the LocoNet bus, or a stale JMRI roster entry echoed over the TCP feed --
+wasn't independently verified against another hardware capture. Worth
+revisiting if a ghost address ever reappears after this fix.

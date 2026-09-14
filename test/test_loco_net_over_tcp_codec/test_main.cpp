@@ -101,3 +101,36 @@ TEST_CASE("decodeLine() ignores a RECEIVE line with no bytes at all")
 
     REQUIRE(codec.decodeLine("RECEIVE") == std::nullopt);
 }
+
+// Guards against corrupted/truncated wire data being trusted as real
+// LocoNet traffic -- the vendor library validates checksums for the real
+// hardware LocoNetPort (see CLAUDE.md), but this interim transport parses
+// hex tokens off a JMRI TCP line with no equivalent check of its own.
+// Motivated by 2026-09-14 field reports of turnout addresses appearing
+// with no matching physical hardware, coinciding with the
+// WiFiClientLineStream reconnect churn fixed the same day (see ADR 0001's
+// addenda) -- a mid-line reconnect could plausibly truncate or splice a
+// RECEIVE line into bytes that still parse as valid hex but no longer
+// form a real LocoNet frame.
+TEST_CASE("decodeLine() ignores a RECEIVE line with a wrong checksum byte")
+{
+    LocoNetOverTcpCodec codec;
+
+    // One captured-real-message test above confirms 0x45 is the correct
+    // checksum for {0xBB, 0x01, 0x00, ...}; 0x44 here is deliberately wrong.
+    REQUIRE(codec.decodeLine("RECEIVE BB 01 00 44") == std::nullopt);
+}
+
+TEST_CASE("decodeLine() ignores a RECEIVE line too short to carry a checksum")
+{
+    LocoNetOverTcpCodec codec;
+
+    REQUIRE(codec.decodeLine("RECEIVE BB") == std::nullopt);
+}
+
+TEST_CASE("decodeLine() accepts a valid two-byte opcode-plus-checksum message")
+{
+    LocoNetOverTcpCodec codec;
+
+    REQUIRE(codec.decodeLine("RECEIVE 83 7C") == LocoNetMessage({0x83, 0x7C}));
+}
