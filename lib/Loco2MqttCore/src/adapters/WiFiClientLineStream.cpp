@@ -18,6 +18,7 @@ std::optional<std::string> WiFiClientLineStream::readLine() {
     return std::nullopt;
 }
 
+
 void WiFiClientLineStream::writeLine(const std::string &line) {
     reconnectIfDue();
     if (!client_.connected()) {

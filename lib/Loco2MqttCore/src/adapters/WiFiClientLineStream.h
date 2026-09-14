@@ -44,7 +44,7 @@ private:
     // long "line" with no '\r'. Mirrors EspUartPort's kMaxBufferedBytes.
     static constexpr std::size_t kMaxBufferedBytes = 256;
 
-    LineAssembler assembler_{kMaxBufferedBytes, '\r'};
+    LineAssembler assembler_{kMaxBufferedBytes};
 
     // Mirrors EspWifiPort's retry cadence for the same reason: avoid
     // hammering connect() every single loop() tick while JMRI is down.
