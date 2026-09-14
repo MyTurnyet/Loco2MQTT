@@ -30,6 +30,15 @@ void PicoMqttPort::publish(const MqttMessage& message)
     // QoS 0 -- message.retained() has no effect here. LocoNetMessageRouter's
     // periodic full state re-publish is the actual reliability mechanism
     // for late subscribers; see the design spec's "MQTT contract" section.
+    // Logged for the same reason SerialMessageLog logs every inbound
+    // LocoNet message: on-hardware validation of this transport has never
+    // been done (see docs/decisions/0001's "Implementation status"), so
+    // this is the only visibility into whether a decoded turnout event
+    // actually reaches this call.
+    Serial.print("MQTT publish: ");
+    Serial.print(message.topic().c_str());
+    Serial.print(" = ");
+    Serial.println(message.payload().c_str());
     server_.publish(message.topic().c_str(), message.payload().c_str());
 }
 
