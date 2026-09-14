@@ -29,6 +29,7 @@
 #include "application/TurnoutTableStartupQuery.h"  // INTERIM trigger — see TurnoutTableStartupQuery.h
 #include "domain/BootMode.h"
 #include "domain/FirmwareVersion.h"
+#include "turnout/PendingTurnoutStateAcks.h"
 #include "turnout/TurnoutLocoNetDecoder.h"
 #include "turnout/TurnoutLocoNetEncoder.h"
 #include "turnout/TurnoutMqttCommandDecoder.h"
@@ -116,6 +117,7 @@ std::optional<TurnoutMqttCommandDecoder> turnoutMqttCommandDecoder;
 std::optional<TurnoutLocoNetEncoder> turnoutLocoNetEncoder;
 std::optional<LocoNetMessageRouter> locoNetMessageRouter;
 std::optional<MqttCommandRouter> mqttCommandRouter;
+std::optional<PendingTurnoutStateAcks> pendingTurnoutStateAcks;
 std::optional<TurnoutTableStartupQuery> turnoutTableStartupQuery;
 bool mqttBegun = false;
 bool mdnsBegun = false;
@@ -129,7 +131,8 @@ namespace
         mdnsPort.emplace();
         jmriConnectionStatusPublisher.emplace(*jmriLineStream, *mqttPort, systemClock);
         sendScheduler.emplace(*locoNetPort, systemClock);
-        turnoutLocoNetDecoder.emplace();
+        pendingTurnoutStateAcks.emplace();
+        turnoutLocoNetDecoder.emplace(*pendingTurnoutStateAcks);
         turnoutMqttEncoder.emplace();
         turnoutMqttCommandDecoder.emplace();
         turnoutLocoNetEncoder.emplace();
@@ -146,7 +149,7 @@ namespace
         mqttCommandRouter.emplace(*mqttPort, *sendScheduler,
                                    std::vector<std::pair<MqttCommandDecoder*, LocoNetEncoder*>>{
                                        {&*turnoutMqttCommandDecoder, &*turnoutLocoNetEncoder}});
-        turnoutTableStartupQuery.emplace(*jmriLineStream, *sendScheduler);
+        turnoutTableStartupQuery.emplace(*jmriLineStream, *sendScheduler, *pendingTurnoutStateAcks, systemClock);
         // mqttPort->begin() is deferred to loop() until wifiPort reports a
         // real connection — EspWifiPort::update() doesn't even issue its
         // first WiFi.begin() until loop() runs, so WiFi is guaranteed not

@@ -148,9 +148,14 @@ ports (interfaces) and only implemented in adapters.
   `ActivityLed`, `FlashingMessageLog`, `JmriConnectionStatusPublisher`,
   `TurnoutTableStartupQuery` (interim — ties to `LineStream`, see its own
   header comment and ADR 0001's 2026-09-14 addendum)
-- `lib/Loco2MqttCore/src/turnout/` — `TurnoutLocoNetDecoder`,
+- `lib/Loco2MqttCore/src/turnout/` — `TurnoutLocoNetDecoder` (takes a
+  `PendingTurnoutStateAcks&` — decodes OPC_SW_REQ/OPC_SW_REP as before,
+  plus OPC_LONG_ACK switch-state-acks, address supplied by that
+  collaborator since OPC_LONG_ACK carries none itself),
   `TurnoutMqttEncoder`, `TurnoutMqttCommandDecoder`, `TurnoutLocoNetEncoder`,
-  `TurnoutStateRequestEncoder`
+  `TurnoutStateRequestEncoder`, `PendingTurnoutStateAcks` (FIFO correlating
+  OPC_LONG_ACK replies back to the OPC_SW_STATE request that provoked
+  them — see its header comment and ADR 0001's 2026-09-14 addenda)
 - `lib/Loco2MqttCore/src/adapters/` — `EspDigitalPin`, `LocoNetEsp32Port`,
   `SerialMessageLog`, `NvsConfigStore`, `EspUartPort`,
   `SerialCommissioningAdapter`, `EspDigitalInput`, `ArduinoClock`,

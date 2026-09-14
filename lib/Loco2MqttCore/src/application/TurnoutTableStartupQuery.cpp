@@ -4,18 +4,35 @@
 
 void TurnoutTableStartupQuery::update()
 {
-    if (justConnected())
+    if (!stream_.isConnected())
+    {
+        resetForNextConnection();
+        return;
+    }
+    if (readyToQuery())
     {
         queryAllTurnouts();
+        queriedThisConnection_ = true;
     }
 }
 
-bool TurnoutTableStartupQuery::justConnected()
+void TurnoutTableStartupQuery::resetForNextConnection()
 {
-    const bool connected = stream_.isConnected();
-    const bool wasDisconnected = !lastKnownConnected_.has_value() || !*lastKnownConnected_;
-    lastKnownConnected_ = connected;
-    return connected && wasDisconnected;
+    connectedSinceMilliseconds_.reset();
+    queriedThisConnection_ = false;
+}
+
+bool TurnoutTableStartupQuery::readyToQuery()
+{
+    if (!connectedSinceMilliseconds_.has_value())
+    {
+        connectedSinceMilliseconds_ = clock_.nowMilliseconds();
+    }
+    if (queriedThisConnection_)
+    {
+        return false;
+    }
+    return clock_.nowMilliseconds() - *connectedSinceMilliseconds_ >= kStableConnectionMs;
 }
 
 void TurnoutTableStartupQuery::queryAllTurnouts()
@@ -23,6 +40,7 @@ void TurnoutTableStartupQuery::queryAllTurnouts()
     unsigned long delayMilliseconds = 0;
     for (int address = kMinTurnoutAddress; address <= kMaxTurnoutAddress; ++address)
     {
+        pendingAcks_.expect(TurnoutAddress(address));
         scheduler_.sendAfter(encoder_.encode(TurnoutAddress(address)), delayMilliseconds);
         delayMilliseconds += kQueryStaggerMs;
     }

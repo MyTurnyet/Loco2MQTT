@@ -332,13 +332,17 @@ rather than a byte-by-byte hex trace.
 same signal `JmriConnectionStatusPublisher` already watches — and, on
 every such transition, walks a fixed address range (1-48, a constant for
 now) sending one `OPC_SW_STATE` request per address via the existing
-`LocoNetSendScheduler`, staggered 20ms apart. Replies arrive as ordinary
-`OPC_SW_REP` traffic and are handled entirely by the existing
-`LocoNetMessageRouter` -> `TurnoutLocoNetDecoder` -> `TurnoutMqttEncoder`
-pipeline — no decoder changes were needed. `TurnoutStateRequestEncoder`
+`LocoNetSendScheduler`, staggered 20ms apart. `TurnoutStateRequestEncoder`
 (`turnout/`), the one new wire-format piece, is untouched by transport
 choice — it just builds an `OPC_SW_STATE` message for an address, the same
 way regardless of which `LocoNetPort` is wired in.
+
+**Correction, same day — see the next addendum below: the "replies arrive
+as ordinary `OPC_SW_REP` traffic, no decoder changes needed" claim
+originally written here was wrong**, caught by Paige from a real capture
+within hours of this being flashed. Left here struck through rather than
+silently rewritten, per this ADR's own precedent (see the line-terminator
+addendum above) of recording what was actually believed at the time.
 
 Considered and rejected: sourcing the address list from JMRI's own turnout
 roster (its separate JSON Server feature, a different port from this
@@ -360,3 +364,85 @@ runs) rather than a clean line-for-line revert like the rest of this ADR's
 `INTERIM`-marked lines. Deliberately not solved now, per this ADR's own
 "no runtime-configurable transport selection" scope discipline — flagged
 here so it isn't a surprise later.
+
+## Addendum (2026-09-14): OPC_SW_STATE is answered by OPC_LONG_ACK, not OPC_SW_REP
+
+Corrects the addendum above. On-hardware testing against Paige's DR5000,
+same session the startup query was first flashed, showed every
+`OPC_SW_STATE` request answered by `OPC_LONG_ACK`, e.g.:
+
+```
+[BC 00 00 43]  Request status of switch LT1 (HB-Main East).
+[B4 3C 30 47]  LONG_ACK: Command station response to switch state request 0x30 (Closed).
+[BC 04 00 47]  Request status of switch LT5 (HB-Carshop 1).
+[B4 3C 00 77]  LONG_ACK: Command station response to switch state request 0x00 (Thrown).
+```
+
+**Practical effect of the original mistake:** `TurnoutLocoNetDecoder`
+only ever recognized `OPC_SW_REQ`/`OPC_SW_REP` (0xB0/0xB1). Every
+`OPC_LONG_ACK` (0xB4) reply from the startup query hit
+`LocoNetMessageRouter::handleMessage()`'s decoder loop, matched no
+registered decoder, and was silently dropped — bus traffic looked
+completely correct in JMRI's own LocoNet monitor (both the request and
+the reply), while nothing ever reached MQTT. Ordinary turnout throws were
+unaffected throughout, since those go through `OPC_SW_REQ`/`OPC_SW_REP`
+exactly as before — this only ever affected the new startup-query path.
+
+**The harder part: `OPC_LONG_ACK`'s 4-byte frame
+(`[0xB4][D1][D2][CHK]`) carries no switch address at all.** `D1 == 0x3C`
+identifies it as a switch-state-request ack (confirmed by the capture
+above — every reply carried that value); `D2` carries the direction in
+the same `kClosedBit` (0x20) convention already used for `OPC_SW_REQ`/
+`OPC_SW_REP`'s `SW2` byte (`0x30` -> Closed, `0x00` -> Thrown, matching
+the capture exactly). But nothing in the four bytes says *which* switch.
+
+**Fix:** `PendingTurnoutStateAcks` (`turnout/`), a small FIFO. Every
+address `TurnoutTableStartupQuery` sends an `OPC_SW_STATE` request for is
+also pushed onto this queue, in the same order. `TurnoutLocoNetDecoder`
+now also handles opcode `0xB4`: on a switch-state ack (`D1 == 0x3C`), it
+pops the oldest pending address and treats `D2` as that address's
+reported position, running it through the same dedup/`lastKnownPosition_`
+map (and so the same periodic-republish `allKnownStates()`) as every
+other turnout state it learns — not a second, parallel state cache that
+could drift. This rests on send order matching reply order, which the
+capture above supports (each request's ack arrives, in order, before the
+next request goes out) but which nothing in the LocoNet protocol
+guarantees against a second client issuing its own `OPC_SW_STATE` queries
+at the same time — see `TurnoutTableStartupQuery`'s header comment for
+the accepted limitation this leaves.
+
+**Also corrected:** `design-decisions` memory and this project's `README.md`
+both originally described the reply as `OPC_SW_REP` too, copied from the
+same wrong assumption — both updated alongside this addendum.
+
+## Addendum (2026-09-14): startup query was re-firing repeatedly, not once per reconnect
+
+After the `OPC_LONG_ACK` fix above landed, Paige reported the startup
+query running far more often than "once when it finally connects" — it
+kept re-querying all 48 turnouts. `TurnoutTableStartupQuery`'s own logic
+(`justConnected()`, latching a single `lastKnownConnected_` bool) only
+ever fires on a `false` -> `true` transition, and was natively tested
+against exactly that; the bug wasn't there, it was in the signal it was
+trusting. `WiFiClientLineStream::isConnected()` returns raw
+`WiFiClient::connected()`, which the ESP32 Arduino core is known to
+report as a transient false negative even on a healthy socket; that
+false reading also feeds `WiFiClientLineStream::reconnectIfDue()`, which
+then acts on it and forces a real `client_.stop()`/`client_.connect()`
+cycle — a genuine, if spurious, disconnect/reconnect as far as anything
+watching `isConnected()` can tell. Both this class and
+`JmriConnectionStatusPublisher` read that same signal; only this one was
+reported as a problem so far (`JmriConnectionStatusPublisher` likely
+flaps its MQTT status the same way — not fixed here, since it wasn't
+what was reported, but worth knowing if it comes up).
+
+**Fix:** debounce in `TurnoutTableStartupQuery` rather than touching
+`WiFiClientLineStream` (Arduino-only, build-check tier, no native test
+coverage to change it against with confidence). It no longer fires on the
+first `true` reading after a `false` one; it now requires
+`isConnected()` to read continuously `true` for `kStableConnectionMs`
+(2000ms, a duration flagged for verification like `kQueryStaggerMs` —
+widen it if brief flapping still causes a refire) before treating it as
+a real reconnect, and any `false` reading during that window resets the
+wait rather than counting toward it. During sustained flapping that never
+stays connected for the full window, the query now never fires at all,
+rather than firing on every blip.

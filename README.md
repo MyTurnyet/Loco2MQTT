@@ -240,7 +240,10 @@ Turnout state is bridged bidirectionally:
   command station for the current state of every turnout address 1-48
   (`OPC_SW_STATE`), so MQTT reflects real layout state within seconds of
   coming online rather than waiting for each turnout to happen to change.
-  Replies come back as ordinary `OPC_SW_REP` traffic through the same state
+  The command station answers with `OPC_LONG_ACK`, not `OPC_SW_REP`
+  (confirmed on real hardware) — since that reply carries no address of
+  its own, the firmware tracks request order to match each ack back to
+  the turnout it was for, then publishes through the same state
   publication path above.
 - **Command subscription** (`loconet/turnout/<address>/set`): the firmware
   listens to these topics and translates MQTT messages containing `"CLOSED"`
