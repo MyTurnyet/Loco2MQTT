@@ -2,8 +2,12 @@
 
 ## Status
 
-Accepted. Implemented on branch `interim/jmri-transport`; on-hardware
-validation (build order step 6) still pending.
+Superseded — transport removed 2026-11-10 after the electrical interface
+was confirmed working on hardware. The body below is kept as a historical
+record; the classes and config it describes no longer exist in the code.
+
+Originally: Accepted. Implemented on branch `interim/jmri-transport`;
+on-hardware validation (build order step 6) was still pending.
 
 **Partially superseded (2026-09-10):** this ADR's "no persistent JMRI
 connection settings" scope decision no longer holds — see "Addendum

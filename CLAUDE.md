@@ -133,21 +133,21 @@ ports (interfaces) and only implemented in adapters.
   `LineAssembler`, `TurnoutAddress`, `TurnoutPosition`,
   `TurnoutStateChanged`, `SetTurnoutPosition`, `DomainEvent`,
   `DomainCommand`, `MqttMessage`, `IncomingMqttMessage`,
-  `PendingLocoNetSend`, `LocoNetChecksum`, `NetworkPortParser`
-  (`parseNetworkPort` is a free function, not a class — shared by
-  `CommandLineParser` and `WebFormCommissioningAdapter` so both
-  commissioning front doors validate a port number identically)
+  `PendingLocoNetSend`, `LocoNetChecksum`
+  (`LocoNetAdapterConfig` holds only `wifiSsid`/`wifiPassword`;
+  `isComplete` means both are non-empty)
 - `lib/Loco2MqttCore/src/ports/` — `DigitalPin`, `LocoNetPort`,
   `MessageLog`, `ConfigStore`, `UartPort`, `DigitalInput`, `Clock`,
   `SetupModeRequestStore`, `RebootTrigger`, `MqttPort`,
   `LocoNetSendScheduler`, `LocoNetMessageDecoder`, `MqttEventEncoder`,
-  `MqttCommandDecoder`, `LocoNetEncoder`, `ActivityIndicator`, `LineStream`
+  `MqttCommandDecoder`, `LocoNetEncoder`, `ActivityIndicator`
 - `lib/Loco2MqttCore/src/application/` — `LocoNetMessageLogger`,
   `CommissioningSession`, `ButtonSetupModeTrigger`,
   `PendingLocoNetSendScheduler`, `LocoNetMessageRouter`, `MqttCommandRouter`,
-  `ActivityLed`, `FlashingMessageLog`, `JmriConnectionStatusPublisher`,
-  `TurnoutTableStartupQuery` (interim — ties to `LineStream`, see its own
-  header comment and ADR 0001's 2026-09-14 addendum)
+  `ActivityLed`, `FlashingMessageLog`,
+  `TurnoutTableStartupQuery` (one-shot: constructed with scheduler,
+  pending acks, and clock; fires the 48-turnout OPC_SW_STATE query once,
+  2s after boot)
 - `lib/Loco2MqttCore/src/turnout/` — `TurnoutLocoNetDecoder` (takes a
   `PendingTurnoutStateAcks&` — decodes OPC_SW_REQ/OPC_SW_REP as before,
   plus OPC_LONG_ACK switch-state-acks, address supplied by that
@@ -155,20 +155,17 @@ ports (interfaces) and only implemented in adapters.
   `TurnoutMqttEncoder`, `TurnoutMqttCommandDecoder`, `TurnoutLocoNetEncoder`,
   `TurnoutStateRequestEncoder`, `PendingTurnoutStateAcks` (FIFO correlating
   OPC_LONG_ACK replies back to the OPC_SW_STATE request that provoked
-  them — see its header comment and ADR 0001's 2026-09-14 addenda)
+  them — see its header comment)
 - `lib/Loco2MqttCore/src/adapters/` — `EspDigitalPin`, `LocoNetEsp32Port`,
   `SerialMessageLog`, `NvsConfigStore`, `EspUartPort`,
   `SerialCommissioningAdapter`, `EspDigitalInput`, `ArduinoClock`,
   `NvsSetupModeRequestStore`, `EspRebootTrigger`,
   `WebFormCommissioningAdapter`, `CaptivePortalServer`, `EspWifiPort`,
-  `PicoMqttPort`, `EspMdnsPort`, `LocoNetOverTcpCodec`, `LocoNetOverTcpPort`,
-  `WiFiClientLineStream` (the last three are the interim JMRI transport —
-  see `docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md` —
-  currently wired into `src/main.cpp` in place of `LocoNetEsp32Port`)
+  `PicoMqttPort`, `EspMdnsPort`
 - `test/support/` — `FakeDigitalPin`, `FakeLocoNetPort`, `FakeMessageLog`,
   `FakeConfigStore`, `FakeUartPort`, `FakeDigitalInput`, `FakeClock`,
   `FakeSetupModeRequestStore`, `FakeRebootTrigger`, `FakeMqttPort`,
-  `FakeLocoNetSendScheduler`, `FakeActivityIndicator`, `FakeLineStream`
+  `FakeLocoNetSendScheduler`, `FakeActivityIndicator`
 - `test/test_<name>/test_main.cpp` — Catch2 test binaries
 
 **Why `native`'s `build_flags` includes `-Ilib/Loco2MqttCore/src`:**
@@ -188,10 +185,12 @@ sequentially starting at `0001`. This is separate from
 feature's implementation plan) — an ADR captures the *decision and its
 tradeoffs*, and can outlive several plans.
 
-- `0001-interim-jmri-loconet-over-tcp-transport.md` — a second `LocoNetPort`
-  implementation, backed by JMRI's LocoNetOverTcp server over WiFi, used to
-  validate the router/decoder/MQTT-bridge logic against real LocoNet
-  traffic while the electrical breadboard interface is debugged separately.
+- `0001-interim-jmri-loconet-over-tcp-transport.md` — **superseded; the
+  transport was removed 2026-11-10** once the electrical interface was
+  confirmed working on hardware. Historical record of a second
+  `LocoNetPort` implementation, backed by JMRI's LocoNetOverTcp server over
+  WiFi, used to validate the router/decoder/MQTT-bridge logic while the
+  breadboard interface was debugged.
 
 ## Engineering Principles
 
