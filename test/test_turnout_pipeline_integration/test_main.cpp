@@ -6,7 +6,6 @@
 #include "application/PendingLocoNetSendScheduler.h"
 #include "application/TurnoutTableStartupQuery.h"
 #include "support/FakeClock.h"
-#include "support/FakeLineStream.h"
 #include "support/FakeLocoNetPort.h"
 #include "support/FakeMessageLog.h"
 #include "support/FakeMqttPort.h"
@@ -67,19 +66,17 @@ TEST_CASE("write pipeline: a real MQTT command reaches on-wire LocoNet bytes")
 // handling (see ADR 0001's addendum).
 TEST_CASE("startup query pipeline: a real OPC_LONG_ACK reply reaches a published MQTT message")
 {
-    FakeLineStream stream;
     FakeLocoNetPort locoNetPort;
     FakeMqttPort mqttPort;
     FakeClock clock;
     FakeMessageLog messageLog;
     PendingTurnoutStateAcks pendingAcks;
     PendingLocoNetSendScheduler scheduler(locoNetPort, clock);
-    TurnoutTableStartupQuery startupQuery(stream, scheduler, pendingAcks, clock);
+    TurnoutTableStartupQuery startupQuery(scheduler, pendingAcks, clock);
     TurnoutLocoNetDecoder decoder(pendingAcks);
     TurnoutMqttEncoder encoder;
     LocoNetMessageRouter router(locoNetPort, mqttPort, clock, messageLog, {{&decoder, &encoder}});
 
-    stream.setConnected(true);
     startupQuery.update();
     clock.setNowMilliseconds(2000);
     startupQuery.update();

@@ -12,10 +12,8 @@ public:
     WebFormCommissioningAdapter(ConfigStore& configStore, RebootTrigger& rebootTrigger);
 
     std::string renderPage() const;
-    bool wouldAccept(const std::string& ssid, const std::string& password,
-                      const std::string& jmriHost, const std::string& jmriPort) const;
-    void handleSubmission(const std::string& ssid, const std::string& password,
-                           const std::string& jmriHost, const std::string& jmriPort);
+    bool wouldAccept(const std::string& ssid, const std::string& password) const;
+    void handleSubmission(const std::string& ssid, const std::string& password);
 
 private:
     ConfigStore& configStore_;

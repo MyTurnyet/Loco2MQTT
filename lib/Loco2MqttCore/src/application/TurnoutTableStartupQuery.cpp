@@ -4,35 +4,24 @@
 
 void TurnoutTableStartupQuery::update()
 {
-    if (!stream_.isConnected())
-    {
-        resetForNextConnection();
-        return;
-    }
     if (readyToQuery())
     {
         queryAllTurnouts();
-        queriedThisConnection_ = true;
+        queried_ = true;
     }
-}
-
-void TurnoutTableStartupQuery::resetForNextConnection()
-{
-    connectedSinceMilliseconds_.reset();
-    queriedThisConnection_ = false;
 }
 
 bool TurnoutTableStartupQuery::readyToQuery()
 {
-    if (!connectedSinceMilliseconds_.has_value())
+    if (!startedAtMilliseconds_.has_value())
     {
-        connectedSinceMilliseconds_ = clock_.nowMilliseconds();
+        startedAtMilliseconds_ = clock_.nowMilliseconds();
     }
-    if (queriedThisConnection_)
+    if (queried_)
     {
         return false;
     }
-    return clock_.nowMilliseconds() - *connectedSinceMilliseconds_ >= kStableConnectionMs;
+    return clock_.nowMilliseconds() - *startedAtMilliseconds_ >= kStartupDelayMs;
 }
 
 void TurnoutTableStartupQuery::queryAllTurnouts()

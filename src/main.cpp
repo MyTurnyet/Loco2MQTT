@@ -9,15 +9,13 @@
 #include "adapters/EspRebootTrigger.h"
 #include "adapters/EspUartPort.h"
 #include "adapters/EspWifiPort.h"
-#include "adapters/LocoNetOverTcpPort.h"  // INTERIM — see docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md
-#include "application/JmriConnectionStatusPublisher.h"
+#include "adapters/LocoNetEsp32Port.h"
 #include "adapters/NvsConfigStore.h"
 #include "adapters/NvsSetupModeRequestStore.h"
 #include "adapters/PicoMqttPort.h"
 #include "adapters/SerialCommissioningAdapter.h"
 #include "adapters/SerialMessageLog.h"
 #include "adapters/WebFormCommissioningAdapter.h"
-#include "adapters/WiFiClientLineStream.h"  // INTERIM — see docs/decisions/0001-interim-jmri-loconet-over-tcp-transport.md
 #include "application/ActivityLed.h"
 #include "application/ButtonSetupModeTrigger.h"
 #include "application/CommissioningSession.h"
@@ -26,7 +24,7 @@
 #include "application/LocoNetMessageRouter.h"
 #include "application/MqttCommandRouter.h"
 #include "application/PendingLocoNetSendScheduler.h"
-#include "application/TurnoutTableStartupQuery.h"  // INTERIM trigger — see TurnoutTableStartupQuery.h
+#include "application/TurnoutTableStartupQuery.h"
 #include "domain/BootMode.h"
 #include "domain/FirmwareVersion.h"
 #include "turnout/PendingTurnoutStateAcks.h"
@@ -47,10 +45,6 @@ namespace
     // reset and pull the shared LocoNet bus low. Verify this against your
     // specific dev board and with a scope through a reset cycle before
     // connecting to a live bus — see README.md "Hardware configuration".
-    // INTERIM: inert on this branch — the electrical interface is swapped
-    // out for the commissioned JMRI host/port (see setupNormalOrNeedsCommissioning
-    // below). Kept, unused, so the revert diff (see the ADR's "Revert plan")
-    // is exactly the lines marked INTERIM.
     constexpr int kLocoNetTxPin = 17;
 
     // The ESP32's BOOT button, wired active-low with an internal pull-up.
@@ -94,12 +88,7 @@ ActivityLed activityLed(activityLedPin, systemClock, kActivityFlashDurationMs);
 // second LocoNetPort::receive() drain.
 FlashingMessageLog flashingMessageLog(messageLog, activityLed);
 
-// INTERIM — was `std::optional<LocoNetEsp32Port> locoNetPort;`. Revert:
-// swap these two declarations back and drop jmriLineStream (see the ADR's
-// "Revert plan").
-std::optional<WiFiClientLineStream> jmriLineStream;
-std::optional<JmriConnectionStatusPublisher> jmriConnectionStatusPublisher;
-std::optional<LocoNetOverTcpPort> locoNetPort;
+std::optional<LocoNetEsp32Port> locoNetPort;
 std::optional<LocoNetMessageLogger> logger;
 std::optional<ButtonSetupModeTrigger> setupModeTrigger;
 std::optional<CommissioningSession> commissioningSession;
@@ -129,7 +118,6 @@ namespace
         wifiPort.emplace(config.wifiSsid(), config.wifiPassword());
         mqttPort.emplace();
         mdnsPort.emplace();
-        jmriConnectionStatusPublisher.emplace(*jmriLineStream, *mqttPort, systemClock);
         sendScheduler.emplace(*locoNetPort, systemClock);
         pendingTurnoutStateAcks.emplace();
         turnoutLocoNetDecoder.emplace(*pendingTurnoutStateAcks);
@@ -149,7 +137,7 @@ namespace
         mqttCommandRouter.emplace(*mqttPort, *sendScheduler,
                                    std::vector<std::pair<MqttCommandDecoder*, LocoNetEncoder*>>{
                                        {&*turnoutMqttCommandDecoder, &*turnoutLocoNetEncoder}});
-        turnoutTableStartupQuery.emplace(*jmriLineStream, *sendScheduler, *pendingTurnoutStateAcks, systemClock);
+        turnoutTableStartupQuery.emplace(*sendScheduler, *pendingTurnoutStateAcks, systemClock);
         // mqttPort->begin() is deferred to loop() until wifiPort reports a
         // real connection — EspWifiPort::update() doesn't even issue its
         // first WiFi.begin() until loop() runs, so WiFi is guaranteed not
@@ -159,13 +147,7 @@ namespace
     void setupNormalOrNeedsCommissioning()
     {
         const LocoNetAdapterConfig config = configStore.load();
-        // INTERIM — was `locoNetPort.emplace(kLocoNetRxPin, kLocoNetTxPin);`.
-        // Host/port now come from commissioning (see docs/decisions/0001's
-        // addendum) rather than the hardcoded kJmriHost/kJmriPort constants
-        // this used to read — empty/zero here (nothing commissioned yet)
-        // just means the socket never connects until a technician sets them.
-        jmriLineStream.emplace(config.jmriHost(), config.jmriPort());
-        locoNetPort.emplace(*jmriLineStream);
+        locoNetPort.emplace(kLocoNetRxPin, kLocoNetTxPin);
         setupModeTrigger.emplace(bootButton, systemClock, setupModeRequestStore);
         if (bootMode == BootMode::NeedsCommissioning)
         {
@@ -236,7 +218,6 @@ void loop()
     mqttPort->update();
     sendScheduler->update();
     locoNetMessageRouter->update();
-    jmriConnectionStatusPublisher->update();
     turnoutTableStartupQuery->update();
     mqttCommandRouter->update();
 }
