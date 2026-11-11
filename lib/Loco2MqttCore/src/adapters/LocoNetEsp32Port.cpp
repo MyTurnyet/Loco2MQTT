@@ -6,6 +6,8 @@
 #include <queue>
 #include <vector>
 
+#include <soc/gpio_sig_map.h>
+
 namespace
 {
     // Modest cap on the receive queue: LocoNet's own bus speed (16.66kbps,
@@ -52,6 +54,11 @@ LocoNetEsp32Port::LocoNetEsp32Port(int rxPin, int txPin)
     : serial_(rxPin, txPin, /* inverse_logic = */ true)
 {
     serial_.setLNCallback(&onLocoNetMessageReceived);
+    // After the vendor's begin(), UART2's RX input is left routed to the GPIO
+    // matrix's constant-zero source (func_sel == 0x30), so the UART never sees
+    // the bus even though digitalRead() on the pin works. Attach it
+    // explicitly; inversion is already configured in the UART by begin().
+    pinMatrixInAttach(rxPin, U2RXD_IN_IDX, false);
 }
 
 void LocoNetEsp32Port::begin()

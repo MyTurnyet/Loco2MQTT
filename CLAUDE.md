@@ -66,6 +66,13 @@ ports (interfaces) and only implemented in adapters.
   begin, a leaked interrupt handle). `setup()` in `src/main.cpp` does not
   call it. The method is kept on the class only so the adapter's
   `begin()`/`update()` shape stays stable; it does nothing today.
+- **UART2 RX must be re-attached after the vendor's begin():** the
+  constructor ends with `pinMatrixInAttach(rxPin, U2RXD_IN_IDX, false)`
+  because the vendor's setup leaves UART2's RX input on the GPIO matrix's
+  constant-zero source (`func_sel == 0x30`, found 2026-11-10 by dumping
+  `GPIO.func_in_sel_cfg`). Without it `digitalRead(16)` sees traffic but the
+  UART never receives a byte, so no frame ever reaches the callback.
+  Confirmed on hardware: removing it kills RX.
 - `LocoNetEsp32Port` (`lib/Loco2MqttCore/src/adapters/LocoNetEsp32Port.cpp`)
   bridges the vendor library's plain-C-callback receive API into a
   translation-unit-local queue — a deliberate, narrowly-scoped exception to
