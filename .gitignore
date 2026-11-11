@@ -66,3 +66,4 @@ __pycache__/
 
 #Ignore .patch files
 *.patch
+/.pre-commit-config.yaml
