@@ -20,6 +20,7 @@
 #include "application/ButtonSetupModeTrigger.h"
 #include "application/CommissioningSession.h"
 #include "application/FlashingMessageLog.h"
+#include "application/LoggingLocoNetPort.h"
 #include "application/LocoNetMessageLogger.h"
 #include "application/LocoNetMessageRouter.h"
 #include "application/MqttCommandRouter.h"
@@ -79,7 +80,8 @@ ArduinoClock systemClock;
 EspDigitalInput bootButton(kBootButtonPin);
 EspUartPort uartPort;
 EspRebootTrigger rebootTrigger;
-SerialMessageLog messageLog;
+SerialMessageLog messageLog("RX");
+SerialMessageLog sentMessageLog("TX");
 EspDigitalPin activityLedPin(kActivityLedPin);
 ActivityLed activityLed(activityLedPin, systemClock, kActivityFlashDurationMs);
 // Every boot mode's sole receive() consumer already calls messageLog.record()
@@ -89,6 +91,9 @@ ActivityLed activityLed(activityLedPin, systemClock, kActivityFlashDurationMs);
 FlashingMessageLog flashingMessageLog(messageLog, activityLed);
 
 std::optional<LocoNetEsp32Port> locoNetPort;
+// Wraps locoNetPort for the send side only, so outgoing messages reach the
+// console; the receive side still has the one consumer described above.
+std::optional<LoggingLocoNetPort> loggingLocoNetPort;
 std::optional<LocoNetMessageLogger> logger;
 std::optional<ButtonSetupModeTrigger> setupModeTrigger;
 std::optional<CommissioningSession> commissioningSession;
@@ -118,7 +123,7 @@ namespace
         wifiPort.emplace(config.wifiSsid(), config.wifiPassword());
         mqttPort.emplace();
         mdnsPort.emplace();
-        sendScheduler.emplace(*locoNetPort, systemClock);
+        sendScheduler.emplace(*loggingLocoNetPort, systemClock);
         pendingTurnoutStateAcks.emplace();
         turnoutLocoNetDecoder.emplace(*pendingTurnoutStateAcks);
         turnoutMqttEncoder.emplace();
@@ -148,6 +153,7 @@ namespace
     {
         const LocoNetAdapterConfig config = configStore.load();
         locoNetPort.emplace(kLocoNetRxPin, kLocoNetTxPin);
+        loggingLocoNetPort.emplace(*locoNetPort, sentMessageLog);
         setupModeTrigger.emplace(bootButton, systemClock, setupModeRequestStore);
         if (bootMode == BootMode::NeedsCommissioning)
         {
